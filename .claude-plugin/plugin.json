@@ -1,6 +1,5 @@
 {
   "name": "docent",
-  "version": "0.1.0",
   "description": "Notices when you didn't follow an explanation, re-explains in plain words, and keeps future answers plainer.",
   "author": { "name": "tnfhrnsss" },
   "repository": "https://github.com/tnfhrnsss/claude-docent",
