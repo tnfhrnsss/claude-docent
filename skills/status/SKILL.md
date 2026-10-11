@@ -3,6 +3,7 @@ name: status
 description: Show docent's current level and remembered terms, forget a term, or reset everything.
 argument-hint: "[reset | forget <term>]"
 disable-model-invocation: true
+allowed-tools: Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/status.sh":*)
 ---
 
 Run this and show its output to the user as-is, with no commentary:
