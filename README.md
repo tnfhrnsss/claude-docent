@@ -1,1 +1,50 @@
-# claude-docent
+# docent
+
+A Claude Code plugin that notices when you didn't follow an explanation — "what do you mean?", "explain it simply" — and adapts: it re-explains in plain words, remembers the terms that confused you, and keeps future answers plainer.
+
+It doesn't make answers longer and doesn't touch code, commits, or files.
+
+## Install
+
+```
+/plugin marketplace add tnfhrnsss/claude-docent
+/plugin install docent@docent
+```
+
+Requires `bash`. On Windows, install [Git for Windows](https://git-scm.com/download/win).
+
+## Configure
+
+Optional. Create `~/.claude/docent/config` (all projects) or `<project>/.claude/docent/config` (this project only; overrides global):
+
+```
+enabled=true     # false turns docent off
+level=auto       # auto | normal | plain | plainer
+```
+
+| `level` | Behavior |
+|---|---|
+| `auto` (default) | Starts at `normal`, steps down when you re-ask often, steps back up after a quiet week |
+| `normal` | Everyday wording, no jargon or unexplained labels |
+| `plain` | Also: one idea per sentence, abbreviations spelled out |
+| `plainer` | Also: conclusion first, one concrete example |
+
+Changes apply from the next session or `/clear`.
+
+## Commands
+
+- `/docent:status` — show the current level and remembered terms
+- `/docent:status forget <term>` — stop avoiding a term
+- `/docent:status reset` — clear the level and all remembered terms
+
+## Data
+
+Stored as plain text in `~/.claude/docent/` (nothing is written inside your projects). Delete that folder to reset.
+
+## Languages
+
+Re-explaining works in any language. Tracking re-asks is supported for English and Korean; add a language by contributing `signals/<lang>.txt`.
+
+## License
+
+MIT
