@@ -1,0 +1,12 @@
+{
+  "name": "docent",
+  "owner": { "name": "tnfhrnsss" },
+  "description": "docent: plain-language re-explanations that adapt to you",
+  "plugins": [
+    {
+      "name": "docent",
+      "source": "./",
+      "description": "Re-explains in plain words when you didn't follow, and adapts over time."
+    }
+  ]
+}
