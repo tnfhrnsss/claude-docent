@@ -14,6 +14,7 @@ WINDOW=20          # recent prompts considered for stepping down
 STEP_DOWN_AT=3     # signals within WINDOW that lower the level
 STEP_UP_DAYS=7     # quiet days before raising the level
 AVOID_MAX=30       # terms injected per session
+STRONG_MAX_BYTES=300  # longer prompts are tasks, not re-asks
 
 # --- key=value files ---------------------------------------------------------
 

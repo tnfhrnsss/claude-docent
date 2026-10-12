@@ -10,4 +10,5 @@ strong	i'?m (lost|confused)
 weak	2	what does (the |an? )?([a-z0-9_.-]+( [a-z0-9_.-]+){0,2}) mean
 weak	3	what('|’)?s (an? |the )?([a-z0-9_.-]+( [a-z0-9_.-]+){0,2}) ?\?
 weak	2	what is (an? |the )?([a-z0-9_.-]+( [a-z0-9_.-]+){0,2}) ?\?
+skip	error|exception|fail|bug|crash|build|(^|[^a-z])(add|fix|rewrite|write|create|implement|refactor|rename|change|update|remove|delete)([^a-z]|$)
 stop	it|this|that|next|up|wrong|the difference|the problem|the issue|the plan|the status|the point|left

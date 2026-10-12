@@ -41,6 +41,14 @@ resolve_term() {  # $1=raw term $2=strip regex $3=stop regex
   done
 }
 
+# Strong signals count only as a short reply to an existing Claude answer, and
+# not when the prompt reads like a task or a bug report ("skip" lines).
+strong_ok=1
+[ -n "$LAST_REPLY" ] || strong_ok=0
+[ ${#PROMPT} -le "$STRONG_MAX_BYTES" ] || strong_ok=0
+skip="$(cat "$ROOT"/signals/*.txt | awk -F '\t' '$1=="skip"{print $2}' | paste -sd'|' -)"
+[ -n "$skip" ] && printf '%s' "$PROMPT" | grep -qE -- "$skip" && strong_ok=0
+
 signal=0
 term=""
 
@@ -52,7 +60,7 @@ for f in "$ROOT"/signals/*.txt; do
   while IFS="$(printf '\t')" read -r kind a b; do
     case "$kind" in
       strong)
-        printf '%s' "$PROMPT" | grep -qE -- "$a" && signal=1 ;;
+        [ "$strong_ok" = 1 ] && printf '%s' "$PROMPT" | grep -qE -- "$a" && signal=1 ;;
       weak)
         [ -n "$term" ] && continue
         raw="$(printf '%s' "$PROMPT" | sed -E -n "s/^.*$b.*\$/\\$a/p")"
@@ -92,4 +100,4 @@ fi
 
 about=""
 [ -n "$term" ] && about=" of \"$term\""
-echo "<docent>The user did not follow your last explanation$about. Re-explain only that part in everyday words, within $(reexplain_lines "$LEVEL") lines. No new concepts, no preamble.$note</docent>"
+echo "<docent>The user may not have followed your last explanation$about. If this message asks about it, re-explain only that part in everyday words, within $(reexplain_lines "$LEVEL") lines. No new concepts, no preamble. If it is a new request or a question about something else, ignore this note.$note</docent>"

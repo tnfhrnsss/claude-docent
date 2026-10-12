@@ -72,7 +72,7 @@ Because there are many languages, detection has two layers.
 
 Layer 1 means the in-turn re-explanation works even without a signals file. Layer 2 handles learning and persistence, and grows as signals files are added.
 
-**Signals files**: `signals/<lang>.txt`, one language per file so the community can add languages by PR. Lines are one of four kinds: `strong`, `weak` (with a capture-group number), `strip` (suffixes such as particles to remove from a term), and `stop` (words never treated as terms). CONTRIBUTING.md has the full rules. The first release ships `en` and `ko`; `ja`, `zh`, `es`, `de`, and others can follow.
+**Signals files**: `signals/<lang>.txt`, one language per file so the community can add languages by PR. Lines are one of five kinds: `strong`, `weak` (with a capture-group number), `strip` (suffixes such as particles to remove from a term), `stop` (words never treated as terms), and `skip` (words of a task or bug report, such as "error" or "fix"; a prompt containing one is not a strong signal). Strong signals also need an earlier Claude reply and a prompt of at most 300 bytes. CONTRIBUTING.md has the full rules. The first release ships `en` and `ko`; `ja`, `zh`, `es`, `de`, and others can follow.
 
 ```
 # signals/en.txt (excerpt)
@@ -87,7 +87,7 @@ stop	it|this|that|next|the difference|the status
 
 | Signal | Handling |
 |---|---|
-| **Strong** | Re-explain instruction + count +1 |
+| **Strong** | Re-explain instruction + count +1 (only in a short reply to Claude with no `skip` word) |
 | **Weak** (captured X) | Treated as strong **only if X appears in Claude's last reply** |
 
 Weak signals are separate so ordinary questions such as "what's the difference between X and Y?" don't count. Only re-asking about a word Claude just used counts as a wording problem. The last reply is read from the end of the `transcript_path` file given on stdin (`tail`, then `grep -F` on assistant lines).

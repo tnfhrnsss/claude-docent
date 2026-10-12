@@ -36,13 +36,16 @@ check() {  # $1=name $2=condition result (0 ok)
 proj_avoid() { cat "$DOCENT_HOME/projects/$(echo "$CLAUDE_PROJECT_DIR" | sed 's#[/:\\ ]#-#g')/avoid.txt" 2>/dev/null; }
 level() { sed -n 's/^level=//p' "$DOCENT_HOME/state" 2>/dev/null; }
 
+out="$(submit "what do you mean?")"
+check "no previous reply → silent" "$([ -z "$out" ]; echo $?)"
+
 reply "We drain the queue, then pin the SHA before the release."
 
 out="$(submit "how do I add a route?")"
 check "plain question prints nothing" "$([ -z "$out" ]; echo $?)"
 
 out="$(submit "what do you mean?")"
-check "english strong signal re-explains" "$(echo "$out" | grep -q 'did not follow'; echo $?)"
+check "english strong signal re-explains" "$(echo "$out" | grep -q 'may not have followed'; echo $?)"
 
 out="$(submit "What does drain mean?")"
 check "weak signal with term from reply" "$(echo "$out" | grep -q 'of \"drain\"'; echo $?)"
@@ -62,10 +65,23 @@ out="$(submit "드레인이 뭔가요")"
 check "korean weak signal strips particle" "$(echo "$out" | grep -q 'of \"드레인\"'; echo $?)"
 
 out="$(submit "이게 무슨말인가요")"
-check "korean strong signal" "$(echo "$out" | grep -q 'did not follow'; echo $?)"
+check "korean strong signal" "$(echo "$out" | grep -q 'may not have followed'; echo $?)"
 
 out="$(submit "쉽게 구현하는 방법 있나요")"
 check "korean 'easily' without 'explain' is not a signal" "$([ -z "$out" ]; echo $?)"
+
+for p in "이 에러가 왜 나는지 이해가 안 돼요" "README에 초보자도 쉽게 설명하는 섹션 추가해줘" \
+         "빌드가 도통 안 되네" "what do you mean by that commit message, rewrite it" \
+         "I'm confused why this test fails"; do
+  out="$(submit "$p")"
+  check "task or bug report is not a re-ask: $p" "$([ -z "$out" ]; echo $?)"
+done
+
+out="$(submit "좀 더 쉽게 설명해 주세요")"
+check "korean 'explain simply' request re-explains" "$(echo "$out" | grep -q 'may not have followed'; echo $?)"
+
+out="$(submit "$(printf 'x%.0s' $(seq 1 320)) what do you mean?")"
+check "long prompt is not a re-ask" "$([ -z "$out" ]; echo $?)"
 
 out="$(submit "\\\"다음 회차\\\" 이게 무슨 뜻이죠")"
 check "quoted phrase recorded" "$(proj_avoid | grep -q '^다음 회차	'; echo $?)"
