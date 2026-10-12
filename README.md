@@ -23,6 +23,16 @@ Third-party marketplaces don't auto-update by default. Turn it on for `docent` i
 /plugin marketplace update docent
 ```
 
+## How it works
+
+Claude itself judges, in any language, when you didn't follow. When it re-explains, it ends that reply with one short line naming the word that confused you:
+
+```
+(docent: drain)
+```
+
+docent reads that line when the reply finishes, remembers the word, and counts the re-ask. Claude adds the line only when re-explaining. If the word is wrong, remove it with `/docent:status forget <term>`.
+
 ## Configure
 
 Optional. Create `~/.claude/docent/config` (all projects) or `<project>/.claude/docent/config` (this project only; overrides global):
@@ -54,16 +64,6 @@ Changes apply from the next session or `/clear`.
 ## Data
 
 Stored as plain text in `~/.claude/docent/` (nothing is written inside your projects). Delete that folder to reset.
-
-## How it works
-
-Claude itself judges, in any language, when you didn't follow. When it re-explains, it ends that reply with one short line naming the word that confused you:
-
-```
-(docent: drain)
-```
-
-docent reads that line when the reply finishes, remembers the word, and counts the re-ask. Claude adds the line only when re-explaining. If the word is wrong, remove it with `/docent:status forget <term>`.
 
 ## License
 
