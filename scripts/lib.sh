@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Shared helpers for docent hooks. Bash 3.2 compatible; no jq/python/node.
+# Hooks fail open: whatever breaks, they exit 0, so Claude runs as if docent
+# were not installed. Never use set -e or exit non-zero (exit 2 on
+# UserPromptSubmit would block the user's prompt).
 
 export LC_ALL=C
 
@@ -150,9 +153,9 @@ recent_hits() {
 # Epoch of the last re-ask or level change (legacy state key as fallback).
 last_activity() {
   local e
-  e="$(awk -F '\t' '$2!="0" {l=$1} END{print l}' "$EVENTS" 2>/dev/null)"
+  e="$(awk -F '\t' '$2!="0" && $1~/^[0-9]+$/ {l=$1} END{print l}' "$EVENTS" 2>/dev/null)"
   [ -n "$e" ] || e="$(state_get last_signal)"
-  echo "$e"
+  case "$e" in ''|*[!0-9]*) ;; *) echo "$e";; esac  # digits only, or nothing
 }
 
 events_compact() {
