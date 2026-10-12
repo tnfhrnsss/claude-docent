@@ -22,6 +22,7 @@ Optional. Create `~/.claude/docent/config` (all projects) or `<project>/.claude/
 ```
 enabled=true     # false turns docent off
 level=auto       # auto | normal | plain | plainer
+familiar=react, typescript   # stacks you know well (optional)
 ```
 
 | `level` | Behavior |
@@ -31,11 +32,14 @@ level=auto       # auto | normal | plain | plainer
 | `plain` | Also: one idea per sentence, abbreviations spelled out |
 | `plainer` | Also: conclusion first, one concrete example |
 
+With `familiar` set, concepts from other stacks are explained by relating them to the ones you know, when a close equivalent exists. For example, a front-end developer asking about Spring dependency injection hears how it compares to React context. Leave it unset and nothing changes.
+
 Changes apply from the next session or `/clear`.
 
 ## Commands
 
 - `/docent:status` — show the current level and remembered terms
+- `/docent:status familiar <stacks>` — set the stacks you know (e.g. `react, typescript`); with no stacks, clear it
 - `/docent:status forget <term>` — stop avoiding a term
 - `/docent:status reset` — clear the level and all remembered terms
 

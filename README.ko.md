@@ -22,6 +22,7 @@
 ```
 enabled=true     # false로 하면 docent를 끕니다
 level=auto       # auto | normal | plain | plainer
+familiar=react, typescript   # 잘 아는 스택 (선택)
 ```
 
 | `level` | 동작 |
@@ -31,11 +32,14 @@ level=auto       # auto | normal | plain | plainer
 | `plain` | 추가로: 한 문장에 한 가지 내용, 약어는 풀어서 씁니다 |
 | `plainer` | 추가로: 결론을 먼저 말하고, 구체적인 예를 하나 듭니다 |
 
+`familiar`를 설정하면, 다른 스택의 개념을 설명할 때 비슷한 것이 있으면 잘 아는 스택에 빗대어 설명합니다. 예를 들어 화면 개발자가 Spring의 의존성 주입을 물으면 React Context와 비교해서 설명합니다. 설정하지 않으면 아무것도 바뀌지 않습니다.
+
 바꾼 설정은 다음 세션이나 `/clear` 뒤부터 적용됩니다.
 
 ## 명령
 
 - `/docent:status` — 현재 단계와 기억된 단어를 보여 줍니다
+- `/docent:status familiar <스택>` — 잘 아는 스택을 설정합니다 (예: `react, typescript`). 스택 없이 실행하면 설정을 지웁니다
 - `/docent:status forget <단어>` — 그 단어를 더 이상 피하지 않습니다
 - `/docent:status reset` — 단계와 기억된 단어를 모두 지웁니다
 

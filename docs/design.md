@@ -134,6 +134,12 @@ Do not make answers longer; only change word choice and sentence shape.
 Reply in the user's language.
 ```
 
+**familiar (SessionStart, only when `familiar` is set)** — about 40 tokens
+```
+familiar: {stacks}. The user knows these well. When explaining a concept from another stack, relate it to a close equivalent in these if one exists; skip the comparison if none fits.
+```
+The user writes the stacks themselves; docent never guesses them from projects, since a wrong guess gives misleading comparisons.
+
 **Re-explain instruction (UserPromptSubmit, only on a re-ask)**
 ```
 <docent>The user may not have followed your last explanation{ of "X"}. If this message asks about it, re-explain only that part in everyday words, within {N} lines. No new concepts, no preamble. If it is a new request or a question about something else, ignore this note.</docent>
@@ -145,6 +151,7 @@ Reply in the user's language.
 |---|---|---|---|
 | `enabled` | `~/.claude/docent/config` or `<project>/.claude/docent/config` (project wins) | `true` | Turn docent off |
 | `level` | Same files | `auto` | `auto` adjusts per 5.3; `normal` / `plain` / `plainer` pins it |
+| `familiar` | Same files; also `/docent:status familiar <stacks>` (writes the global file) | unset | Stacks the user knows well, e.g. `react, typescript`; concepts from other stacks are related to these |
 
 To turn the whole plugin off, disable it in `/plugin`. `enabled` is for turning it off in one project.
 
@@ -171,7 +178,7 @@ claude-docent/                 # repo root = plugin root
 │   ├── en.txt
 │   └── ko.txt
 ├── skills/
-│   └── status/SKILL.md        # /docent:status [reset | forget <term>]
+│   └── status/SKILL.md        # /docent:status [familiar <stacks> | forget <term> | reset]
 ├── tests/
 │   └── run.sh                 # runs the hooks against a temp data dir and a fake transcript
 ├── .gitattributes             # *.sh text eol=lf
@@ -215,6 +222,5 @@ bash tests/run.sh                                # hook tests
 
 ## 8. Later
 
-- Stack bridging (explaining in terms of the user's own stack, e.g. Spring or Python): add as an optional feature if needed.
 - More signals languages (ja, zh, es, de, fr, pt …).
 - Windows: hooks run through Git Bash, so the README notes that Git for Windows is required. Add a PowerShell version if needed.

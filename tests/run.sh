@@ -116,6 +116,26 @@ check "term in 2 projects promoted to global" "$(grep -q '^drain	' "$DOCENT_HOME
 out="$(bash "$ROOT/scripts/status.sh")"
 check "status counts other projects' terms" "$(echo "$out" | grep -q '^other projects: [0-9]* terms\{0,1\} in 1 project$'; echo $?)"
 
+# familiar: set by command, injected at session start, cleared by empty value.
+bash "$ROOT/scripts/status.sh" familiar react, typescript > /dev/null
+out="$(start)"
+check "familiar stacks injected at session start" "$(echo "$out" | grep -q '^familiar: react, typescript\. '; echo $?)"
+check "status shows familiar" "$(bash "$ROOT/scripts/status.sh" | grep -q '^familiar: *react, typescript$'; echo $?)"
+bash "$ROOT/scripts/status.sh" familiar > /dev/null
+out="$(start)"
+check "empty familiar clears it" "$(! echo "$out" | grep -q '^familiar:'; echo $?)"
+check "no familiar → nothing injected" "$(! echo "$out" | grep -q 'familiar'; echo $?)"
+
+printf 'level=auto  # keep me\n' > "$DOCENT_HOME/config"
+bash "$ROOT/scripts/status.sh" familiar vue > /dev/null
+check "familiar keeps other config lines" "$(grep -qx 'level=auto  # keep me' "$DOCENT_HOME/config" && grep -qx 'familiar=vue' "$DOCENT_HOME/config"; echo $?)"
+
+mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"
+printf 'familiar=spring, java  # this project\n' > "$CLAUDE_PROJECT_DIR/.claude/docent/config"
+out="$(start)"
+check "project familiar overrides global" "$(echo "$out" | grep -q '^familiar: spring, java\. '; echo $?)"
+rm "$CLAUDE_PROJECT_DIR/.claude/docent/config" "$DOCENT_HOME/config"
+
 # Fixed level and disable via config.
 mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"
 printf 'level=normal\n' > "$CLAUDE_PROJECT_DIR/.claude/docent/config"
