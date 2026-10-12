@@ -8,6 +8,7 @@ INPUT="$(cat)"
 HOOK_CWD="$(json_str "$INPUT" cwd)"
 
 enabled || exit 0
+lock
 
 # Step back toward normal after a quiet stretch.
 if auto_mode; then

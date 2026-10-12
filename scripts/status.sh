@@ -3,6 +3,8 @@
 
 . "$(dirname "$0")/lib.sh"
 
+case "$1" in reset|forget) lock;; esac
+
 case "$1" in
   reset)
     rm -f "$STATE" "$GLOBAL_AVOID" "$SEEN" "$(project_data)/avoid.txt"

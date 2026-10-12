@@ -111,5 +111,12 @@ printf 'level=plain\nlast_signal=%s\n' "$(( $(date +%s) - 8 * 86400 ))" > "$DOCE
 start > /dev/null
 check "quiet week steps level back up" "$([ "$(level)" = normal ]; echo $?)"
 
+# Parallel sessions must not lose each other's updates.
+rm -f "$DOCENT_HOME/state"
+for i in $(seq 1 15); do submit "how do I add a route?" > /dev/null & done; wait
+n="$(sed -n 's/^recent=//p' "$DOCENT_HOME/state" | tr -d '\n' | wc -c | tr -d ' ')"
+check "15 parallel prompts all recorded" "$([ "$n" = 15 ]; echo $?)"
+check "lock released" "$([ ! -d "$DOCENT_HOME/.lock" ]; echo $?)"
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

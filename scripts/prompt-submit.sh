@@ -8,6 +8,7 @@ INPUT="$(cat)"
 HOOK_CWD="$(json_str "$INPUT" cwd)"
 
 enabled || exit 0
+lock
 
 PROMPT="$(json_str "$INPUT" prompt | tr 'A-Z' 'a-z')"
 TRANSCRIPT="$(json_str "$INPUT" transcript_path)"

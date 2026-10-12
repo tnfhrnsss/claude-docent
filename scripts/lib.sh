@@ -16,6 +16,22 @@ STEP_UP_DAYS=7     # quiet days before raising the level
 AVOID_MAX=30       # terms injected per session
 STRONG_MAX_BYTES=300  # longer prompts are tasks, not re-asks
 
+# --- lock -------------------------------------------------------------------
+
+# Hooks from parallel sessions update the same files; serialize them. mkdir is
+# atomic everywhere (macOS has no flock). A lock older than ~5s is stale.
+LOCK="$DATA/.lock"
+lock() {
+  local i=0
+  mkdir -p "$DATA"
+  until mkdir "$LOCK" 2>/dev/null; do
+    i=$((i + 1))
+    [ $i -ge 50 ] && { rmdir "$LOCK" 2>/dev/null; i=0; }
+    sleep 0.1
+  done
+  trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+}
+
 # --- key=value files ---------------------------------------------------------
 
 conf_get() {  # $1=file $2=key
