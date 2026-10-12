@@ -46,7 +46,7 @@ Changes apply from the next session or `/clear`.
 
 ## Commands
 
-- `/docent:status` — show the current level and remembered terms. `reply read: failing since <date>` means docent can't read Claude's replies from the transcript (its format may have changed), so it can't tell which terms came from Claude; please open an issue
+- `/docent:status` — show the current level and remembered terms
 - `/docent:status familiar <stacks>` — set the stacks you know (e.g. `react, typescript`); with no stacks, clear it
 - `/docent:status forget <term>` — stop avoiding a term
 - `/docent:status reset` — clear the level and all remembered terms
@@ -55,9 +55,15 @@ Changes apply from the next session or `/clear`.
 
 Stored as plain text in `~/.claude/docent/` (nothing is written inside your projects). Delete that folder to reset.
 
-## Languages
+## How it works
 
-Re-explaining works in any language. Tracking re-asks is supported for English and Korean; add a language by contributing `signals/<lang>.txt`.
+Claude itself judges, in any language, when you didn't follow. When it re-explains, it ends that reply with one short line naming the word that confused you:
+
+```
+(docent: drain)
+```
+
+docent reads that line when the reply finishes, remembers the word, and counts the re-ask. Claude adds the line only when re-explaining. If the word is wrong, remove it with `/docent:status forget <term>`.
 
 ## License
 

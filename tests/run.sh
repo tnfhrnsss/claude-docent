@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the docent hooks against an isolated data dir and a fake transcript.
+# Runs the docent hooks against an isolated data dir.
 # Usage: bash tests/run.sh
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,26 +11,22 @@ export DOCENT_HOME="$TMP/data"
 export CLAUDE_PROJECT_DIR="$TMP/proj-a"
 mkdir -p "$CLAUDE_PROJECT_DIR"
 
-TRANSCRIPT="$TMP/transcript.jsonl"
 pass=0; fail=0
+SID=t
 
-reply() {  # write a fake last assistant reply
-  printf '{"type":"assistant","message":{"content":[{"type":"text","text":"%s"}]}}\n' "$1" > "$TRANSCRIPT"
-}
-
-tool_use() {  # append a fake tool call and its (large) result
-  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"%s"}}]}}\n' "$1" >> "$TRANSCRIPT"
-  printf '{"type":"user","message":{"content":[{"type":"tool_result","content":"%s"}]}}\n' "$2" >> "$TRANSCRIPT"
+stop() {  # $1=last_assistant_message as a JSON string body ("\n" for newlines)
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"%s","background_tasks":[]}' \
+    "$SID" "$CLAUDE_PROJECT_DIR" "$1" | bash "$ROOT/scripts/stop.sh"
 }
 
 submit() {  # $1=prompt
-  printf '{"session_id":"t","transcript_path":"%s","cwd":"%s","hook_event_name":"UserPromptSubmit","prompt":"%s"}' \
-    "$TRANSCRIPT" "$CLAUDE_PROJECT_DIR" "$1" | bash "$ROOT/scripts/prompt-submit.sh"
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"UserPromptSubmit","prompt":"%s"}' \
+    "$SID" "$CLAUDE_PROJECT_DIR" "$1" | bash "$ROOT/scripts/prompt-submit.sh"
 }
 
 start() {
-  printf '{"session_id":"t","cwd":"%s","hook_event_name":"SessionStart","source":"startup"}' \
-    "$CLAUDE_PROJECT_DIR" | bash "$ROOT/scripts/session-start.sh"
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"SessionStart","source":"startup"}' \
+    "$SID" "$CLAUDE_PROJECT_DIR" | bash "$ROOT/scripts/session-start.sh"
 }
 
 check() {  # $1=name $2=condition result (0 ok)
@@ -38,80 +34,78 @@ check() {  # $1=name $2=condition result (0 ok)
   else fail=$((fail + 1)); echo "FAIL $1"; fi
 }
 
-proj_avoid_path() { echo "$DOCENT_HOME/projects/$(echo "$CLAUDE_PROJECT_DIR" | sed 's#[/:\\ ]#-#g')/avoid.txt"; }
-proj_avoid() { cat "$(proj_avoid_path)" 2>/dev/null; }
+proj_avoid() { cat "$DOCENT_HOME/projects/$(echo "$CLAUDE_PROJECT_DIR" | sed 's#[/:\\ ]#-#g')/avoid.txt" 2>/dev/null; }
 level() { sed -n 's/^level=//p' "$DOCENT_HOME/state" 2>/dev/null; }
-
-out="$(submit "what do you mean?")"
-check "no previous reply → silent" "$([ -z "$out" ]; echo $?)"
-
-reply "We drain the queue, then pin the SHA before the release."
-
-out="$(submit "how do I add a route?")"
-check "plain question prints nothing" "$([ -z "$out" ]; echo $?)"
-
-out="$(submit "what do you mean?")"
-check "english strong signal re-explains" "$(echo "$out" | grep -q 'may not have followed'; echo $?)"
-
-out="$(submit "What does drain mean?")"
-check "weak signal with term from reply" "$(echo "$out" | grep -q 'of \"drain\"'; echo $?)"
-check "term recorded for project" "$(proj_avoid | grep -q '^drain	'; echo $?)"
-
-out="$(submit "what's a monad?")"
-check "weak signal, term not in reply → silent" "$([ -z "$out" ]; echo $?)"
-
-out="$(submit "what's the difference?")"
-check "stop word → silent" "$([ -z "$out" ]; echo $?)"
-
-submit "sorry, I'm lost" > /dev/null
-check "third signal steps level down to plain" "$([ "$(level)" = plain ]; echo $?)"
-submit "what do you mean?" > /dev/null; submit "i'm lost" > /dev/null
-check "count restarts after a level change" "$([ "$(level)" = plain ]; echo $?)"
-
-reply "이 단계에서 큐를 드레인하고 다음 회차로 넘어갑니다."
-out="$(submit "드레인이 뭔가요")"
-check "korean weak signal strips particle" "$(echo "$out" | grep -q 'of \"드레인\"'; echo $?)"
-
-out="$(submit "이게 무슨말인가요")"
-check "korean strong signal" "$(echo "$out" | grep -q 'may not have followed'; echo $?)"
-
-out="$(submit "쉽게 구현하는 방법 있나요")"
-check "korean 'easily' without 'explain' is not a signal" "$([ -z "$out" ]; echo $?)"
-
-for p in "이 에러가 왜 나는지 이해가 안 돼요" "README에 초보자도 쉽게 설명하는 섹션 추가해줘" \
-         "빌드가 도통 안 되네" "what do you mean by that commit message, rewrite it" \
-         "I'm confused why this test fails"; do
-  out="$(submit "$p")"
-  check "task or bug report is not a re-ask: $p" "$([ -z "$out" ]; echo $?)"
-done
-
-out="$(submit "좀 더 쉽게 설명해 주세요")"
-check "korean 'explain simply' request re-explains" "$(echo "$out" | grep -q 'may not have followed'; echo $?)"
-
-out="$(submit "$(printf 'x%.0s' $(seq 1 320)) what do you mean?")"
-check "long prompt is not a re-ask" "$([ -z "$out" ]; echo $?)"
-
-out="$(submit "\\\"다음 회차\\\" 이게 무슨 뜻이죠")"
-check "quoted phrase recorded" "$(proj_avoid | grep -q '^다음 회차	'; echo $?)"
+last_event() { tail -n 1 "$DOCENT_HOME/events" 2>/dev/null | cut -f2; }
+events() { wc -l < "$DOCENT_HOME/events" 2>/dev/null | tr -d ' '; }
 
 out="$(start)"
-check "session start injects level and avoid list" "$(echo "$out" | grep -q 'avoid: .*drain' && echo "$out" | grep -q 'level="plainer"\|level="plain"'; echo $?)"
+check "core rules ask for the marker line" "$(echo "$out" | grep -qF '`(docent: X)`'; echo $?)"
 
-# Only Claude's reply text counts, not its commands or tool output.
-reply "Lint passed."
-tool_use "npm run eslint" "eslint: 0 problems"
-out="$(submit "what is eslint?")"
-check "term only in a command → silent" "$([ -z "$out" ]; echo $?)"
+# Stop: the marker on the last line records the re-ask and the term.
+out="$(stop "Here is the plan.\n\nWe drain the queue.")"
+check "ordinary reply: silent, counted as 0" "$([ -z "$out" ] && [ "$(last_event)" = 0 ]; echo $?)"
 
-reply "The hook debounces saves."
-for i in $(seq 1 60); do tool_use "ls" "file$i"; done
-out="$(submit "what does debounce mean?")"
-check "reply text found past many tool calls" "$(echo "$out" | grep -q 'debounce'; echo $?)"
+stop "Drain means: finish what is already in the queue, take nothing new.\n\n(docent: drain)"
+check "marker with term: re-ask counted" "$([ "$(last_event)" = 1 ]; echo $?)"
+check "marker with term: term recorded for project" "$(proj_avoid | grep -q '^drain	'; echo $?)"
+
+stop "In short: it is the same data.\n(docent)"
+check "marker without term: counted, nothing recorded" "$([ "$(last_event)" = 1 ] && [ "$(proj_avoid | wc -l | tr -d ' ')" = 1 ]; echo $?)"
+
+stop "큐를 비운다는 뜻입니다.\n\n(docent: 드레인)\n"
+check "korean term, trailing newline" "$(proj_avoid | grep -q '^드레인	'; echo $?)"
+
+stop "It pins one version.\n(docent: Pin the SHA, lockfile)"
+check "several terms, ASCII lowercased" "$(proj_avoid | grep -q '^pin the sha	' && proj_avoid | grep -q '^lockfile	'; echo $?)"
+
+stop "다시 설명합니다.\n(docent: 드레인)\n\n그리고 하나 더 있습니다."
+check "marker not on the last line → 0" "$([ "$(last_event)" = 0 ]; echo $?)"
+
+stop "Add a line like \`(docent: drain)\` at the end."
+check "marker quoted inline → 0" "$([ "$(last_event)" = 0 ]; echo $?)"
+
+n="$(events)"
+printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$CLAUDE_PROJECT_DIR" | bash "$ROOT/scripts/stop.sh"; rc=$?
+check "no last_assistant_message: exit 0, counted as 0" "$([ $rc = 0 ] && [ "$(last_event)" = 0 ] && [ "$(events)" = $((n + 1)) ]; echo $?)"
+
+stop "x\n(docent: $(printf 'a%.0s' $(seq 1 70)))"
+check "term over 60 bytes ignored" "$(! proj_avoid | grep -q '^aaaa'; echo $?)"
+
+# Level: the third re-ask in the window lowers it; this session hears it once.
+rm -f "$DOCENT_HOME/events" "$DOCENT_HOME/state"
+start > /dev/null
+out="$(submit "how do I add a route?")"
+check "unchanged level: prompt-submit silent" "$([ -z "$out" ]; echo $?)"
+stop "a\n(docent)"; stop "b\n(docent)"
+check "two re-asks keep normal" "$([ "$(level)" = "" ] || [ "$(level)" = normal ]; echo $?)"
+stop "c\n(docent: drain)"
+check "third re-ask steps level down to plain" "$([ "$(level)" = plain ]; echo $?)"
+out="$(submit "ok")"
+check "level change injected on the next prompt" "$(echo "$out" | grep -q 'level changed.*Level: plain'; echo $?)"
+out="$(submit "ok")"
+check "level change injected only once" "$([ -z "$out" ]; echo $?)"
+stop "d\n(docent)"; stop "e\n(docent)"
+check "count restarts after a level change" "$([ "$(level)" = plain ]; echo $?)"
+
+SID=other
+out="$(submit "hello")"
+check "session never started: remembered, not announced" "$([ -z "$out" ] && [ "$(cat "$DOCENT_HOME/sessions/other")" = plain ]; echo $?)"
+SID='../x'
+out="$(submit "hello")"
+check "odd session id ignored" "$([ -z "$out" ] && [ ! -e "$DOCENT_HOME/x" ]; echo $?)"
+SID=t
+
+touch -t 202001010000 "$DOCENT_HOME/sessions/other"
+start > /dev/null
+check "old session files removed at session start" "$([ ! -e "$DOCENT_HOME/sessions/other" ] && [ -e "$DOCENT_HOME/sessions/t" ]; echo $?)"
+
+out="$(start)"
+check "session start injects level and avoid list" "$(echo "$out" | grep -q 'avoid: .*drain' && echo "$out" | grep -q 'level="plain"'; echo $?)"
 
 # Promotion: the same term in a second project goes global.
 export CLAUDE_PROJECT_DIR="$TMP/proj-b"; mkdir -p "$CLAUDE_PROJECT_DIR"
-reply "We drain the queue."
-submit "what does drain mean?" > /dev/null
+stop "x\n(docent: drain)"
 check "term in 2 projects promoted to global" "$(grep -q '^drain	' "$DOCENT_HOME/avoid.txt"; echo $?)"
 
 out="$(bash "$ROOT/scripts/status.sh")"
@@ -138,14 +132,16 @@ check "project familiar overrides global" "$(echo "$out" | grep -q '^familiar: s
 rm "$CLAUDE_PROJECT_DIR/.claude/docent/config" "$DOCENT_HOME/config"
 
 # Fixed level and disable via config.
-mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"
 printf 'level=normal\n' > "$CLAUDE_PROJECT_DIR/.claude/docent/config"
 out="$(start)"
 check "config level overrides adaptive level" "$(echo "$out" | grep -q 'level="normal"'; echo $?)"
+n="$(events)"
+stop "x\n(docent: fixedterm)"
+check "fixed level: term recorded, no event" "$(proj_avoid | grep -q '^fixedterm	' && [ "$(events)" = "$n" ]; echo $?)"
 
 printf 'enabled=false\n' > "$CLAUDE_PROJECT_DIR/.claude/docent/config"
-out="$(start; submit "what do you mean?")"
-check "enabled=false prints nothing" "$([ -z "$out" ]; echo $?)"
+out="$(start; submit "hello"; stop "x\n(docent: offterm)")"
+check "enabled=false prints and records nothing" "$([ -z "$out" ] && ! proj_avoid | grep -q '^offterm'; echo $?)"
 
 # Step back up after a quiet week.
 rm "$CLAUDE_PROJECT_DIR/.claude/docent/config"
@@ -162,12 +158,11 @@ check "legacy last_signal still steps level up" "$([ "$(level)" = normal ]; echo
 
 # Parallel sessions must not lose each other's records.
 rm -f "$DOCENT_HOME/events"
-for i in $(seq 1 15); do submit "how do I add a route?" > /dev/null & done; wait
-check "15 parallel prompts all recorded" "$([ "$(wc -l < "$DOCENT_HOME/events" | tr -d ' ')" = 15 ]; echo $?)"
+for i in $(seq 1 15); do stop "reply $i" & done; wait
+check "15 parallel replies all recorded" "$([ "$(events)" = 15 ]; echo $?)"
 
-reply "We drain the queue."
 before="$(proj_avoid | awk -F '\t' '$1=="drain"{c+=$2} END{print c+0}')"
-for i in $(seq 1 10); do submit "what does drain mean?" > /dev/null & done; wait
+for i in $(seq 1 10); do stop "x\n(docent: drain)" & done; wait
 after="$(proj_avoid | awk -F '\t' '$1=="drain"{c+=$2} END{print c+0}')"
 check "10 parallel term records all kept" "$([ $((after - before)) = 10 ]; echo $?)"
 
@@ -175,67 +170,6 @@ check "10 parallel term records all kept" "$([ $((after - before)) = 10 ]; echo 
 for i in $(seq 1 250); do printf 'lint\t1\t1\n'; done >> "$DOCENT_HOME/avoid.txt"
 start > /dev/null
 check "avoid list compacted, count kept" "$(grep -q '^lint	250	' "$DOCENT_HOME/avoid.txt" && [ "$(wc -l < "$DOCENT_HOME/avoid.txt" | tr -d ' ')" -le 3 ]; echo $?)"
-
-# Korean term questions: each form records the term.
-for p in "드레인은 무슨 뜻이에요?" "드레인이 무슨 말이에요" "드레인이 무슨 뜻인가요" "드레인 무슨 뜻이야" \
-         "드레인이란?" "드레인이란" "드레인이 뭐지" "드레인이 뭐죠?"; do
-  reply "이 단계에서 큐를 드레인하고 다음 회차로 넘어갑니다. 그래서 결과가 같습니다."
-  rm -f "$(proj_avoid_path)"
-  out="$(submit "$p")"
-  check "korean term question records term: $p" "$(echo "$out" | grep -q 'of \"드레인\"' && proj_avoid | grep -q '^드레인	'; echo $?)"
-done
-for p in "이게 무슨 말인가요" "그래서 무슨 뜻이에요?" "결과가 무슨 말이에요"; do
-  out="$(submit "$p")"
-  check "korean question without a target counts, no term: $p" "$(echo "$out" | grep -q 'may not have followed' && ! echo "$out" | grep -q ' of \"'; echo $?)"
-done
-
-# Reading the reply: loose JSON, with and without jq.
-mkdir -p "$TMP/nojq"
-IFS=: read -ra dirs <<< "$PATH"
-for d in "${dirs[@]}"; do
-  for f in "$d"/*; do
-    n="${f##*/}"
-    [ "$n" = jq ] || [ -e "$TMP/nojq/$n" ] || ln -s "$f" "$TMP/nojq/$n" 2> /dev/null
-  done
-done
-
-parse_cases() {  # $1=label
-  printf '{"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "x"}, {"type": "text", "text": "We drain it."}]}}\n' > "$TRANSCRIPT"
-  out="$(submit "what does drain mean?")"
-  check "$1: spaced keys, text not first" "$(echo "$out" | grep -q 'of \"drain\"'; echo $?)"
-
-  printf '{"type":"assistant","message":{"content":[{"text":"Then pin the SHA.","type":"text"}]}}\n' > "$TRANSCRIPT"
-  out="$(submit "what does pin mean?")"
-  check "$1: reversed key order" "$(echo "$out" | grep -q 'of \"pin\"'; echo $?)"
-
-  reply "Lint passed."
-  tool_use "npm run eslint" "eslint: 0 problems"
-  printf '{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"text","text":"eslint ok"}]}]}}\n' >> "$TRANSCRIPT"
-  out="$(submit "what is eslint?")"
-  check "$1: term only in a command or tool output → silent" "$([ -z "$out" ]; echo $?)"
-}
-if command -v jq > /dev/null; then parse_cases "with jq"; else echo "skip with jq: jq not installed"; fi
-PATH="$TMP/nojq" parse_cases "without jq"
-check "test PATH really hides jq" "$(! PATH="$TMP/nojq" command -v jq > /dev/null; echo $?)"
-
-# A reply that can't be read is recorded quietly and shown in status.
-read_fail() { sed -n 's/^read_fail=//p' "$DOCENT_HOME/state" 2>/dev/null; }
-printf '{"type":"assistant","message":{"content":[{"kind":"words","value":"We drain it."}]}}\n' > "$TRANSCRIPT"
-out="$(submit "how do I add a route?" 2> "$TMP/err")"; rc=$?
-check "unreadable reply: silent, exit 0" "$([ $rc = 0 ] && [ -z "$out" ] && [ ! -s "$TMP/err" ]; echo $?)"
-check "unreadable reply: read_fail recorded" "$(read_fail | grep -qE '^[0-9]+$'; echo $?)"
-first="$(read_fail)"
-submit "how do I add a route?" > /dev/null
-check "read_fail keeps the first failure time" "$([ "$(read_fail)" = "$first" ]; echo $?)"
-check "status shows reply read failing" "$(bash "$ROOT/scripts/status.sh" | grep -qE '^reply read: +failing since [0-9]{4}-[0-9]{2}-[0-9]{2} '; echo $?)"
-reply "We drain the queue."
-submit "how do I add a route?" > /dev/null
-check "readable reply clears read_fail" "$([ -z "$(read_fail)" ]; echo $?)"
-check "status shows reply read ok" "$(bash "$ROOT/scripts/status.sh" | grep -qE '^reply read: +ok$'; echo $?)"
-: > "$TRANSCRIPT"; tool_use "ls" "a.txt"
-submit "how do I add a route?" > /dev/null
-check "tool-call-only reply is not a read failure" "$([ -z "$(read_fail)" ]; echo $?)"
-reply "We drain the queue."
 
 # Hooks fail open: broken data never surfaces as an error or a non-zero exit.
 printf 'level=plain\n' > "$DOCENT_HOME/state"
@@ -251,8 +185,10 @@ check "corrupt last_signal: no error, level kept" "$([ ! -s "$TMP/err" ] && [ "$
 
 if [ "$(id -u)" != 0 ]; then  # root ignores file permissions
   chmod -R a-w "$DOCENT_HOME"
-  out="$(submit "what do you mean?" 2> /dev/null)"; rc=$?
-  check "read-only data dir: submit exits 0 and still re-explains" "$([ $rc = 0 ] && echo "$out" | grep -q 'may not have followed'; echo $?)"
+  stop "x\n(docent: drain)" 2> "$TMP/err"; rc=$?
+  check "read-only data dir: stop exits 0, no error output" "$([ $rc = 0 ] && [ ! -s "$TMP/err" ]; echo $?)"
+  out="$(submit "hello" 2> "$TMP/err")"; rc=$?
+  check "read-only data dir: submit exits 0, no error output" "$([ $rc = 0 ] && [ ! -s "$TMP/err" ]; echo $?)"
   out="$(start 2> /dev/null)"; rc=$?
   check "read-only data dir: start exits 0 and still prints rules" "$([ $rc = 0 ] && echo "$out" | grep -q '<docent level='; echo $?)"
   chmod -R u+w "$DOCENT_HOME"

@@ -23,8 +23,11 @@ fi
 events_compact
 avoid_compact "$GLOBAL_AVOID"
 avoid_compact "$(project_data)/avoid.txt"
+find "$SESSIONS" -type f -mtime +"$SESSION_DAYS" -exec rm -f {} + 2> /dev/null
 
 LEVEL="$(current_level)"
+# Remember which level this session was told, so prompt-submit can announce a change.
+f="$(session_file "$(json_str "$INPUT" session_id)")" && mkdir -p "$SESSIONS" 2> /dev/null && echo "$LEVEL" > "$f" 2> /dev/null
 AVOID="$(avoid_list)"
 
 echo "<docent level=\"$LEVEL\">"

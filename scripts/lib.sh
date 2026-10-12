@@ -11,15 +11,15 @@ DATA="${DOCENT_HOME:-$HOME/.claude/docent}"
 STATE="$DATA/state"
 GLOBAL_AVOID="$DATA/avoid.txt"
 SEEN="$DATA/seen.txt"
-EVENTS="$DATA/events"   # one line per prompt: epoch<TAB>0|1, or epoch<TAB>R on a level change
+EVENTS="$DATA/events"   # one line per reply: epoch<TAB>0|1, or epoch<TAB>R on a level change
+SESSIONS="$DATA/sessions"  # per session: the level whose rules were injected
 
 LEVELS="normal plain plainer"
-WINDOW=20          # recent prompts considered for stepping down
-STEP_DOWN_AT=3     # signals within WINDOW that lower the level
+WINDOW=20          # recent replies considered for stepping down
+STEP_DOWN_AT=3     # marked replies within WINDOW that lower the level
 STEP_UP_DAYS=7     # quiet days before raising the level
 AVOID_MAX=30       # terms injected per session
-STRONG_MAX_BYTES=300  # longer prompts are tasks, not re-asks
-REPLY_BLOCKS=8     # recent reply text blocks searched for a term
+SESSION_DAYS=7     # session files older than this are removed at session start
 
 # Parallel sessions (e.g. Orca panes) write the same files at once. Hot paths
 # only append one short line (>>), which can't lose another session's write;
@@ -92,8 +92,6 @@ shift_level() {  # $1=+1 (plainer) or -1 (back toward normal)
   echo "$1"
 }
 
-reexplain_lines() { [ "$1" = plainer ] && echo 6 || echo 5; }
-
 # --- JSON (flat string fields only) -----------------------------------------
 
 json_str() {  # $1=json $2=key — returns the unescaped string value
@@ -101,6 +99,13 @@ json_str() {  # $1=json $2=key — returns the unescaped string value
     | sed -E -n 's/^.*"'"$2"'"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)".*$/\1/p' \
     | head -n 1 \
     | sed 's/\\n/ /g; s/\\t/ /g; s/\\"/"/g; s/\\\\/\\/g'
+}
+
+# --- sessions ---------------------------------------------------------------
+
+session_file() {  # $1=session_id — fails on an empty or odd id
+  case "$1" in ''|*[!A-Za-z0-9_-]*) return 1;; esac
+  echo "$SESSIONS/$1"
 }
 
 # --- avoid list -------------------------------------------------------------
@@ -142,7 +147,7 @@ avoid_list() {
 
 event_add() { mkdir -p "$DATA"; printf '%s\t%s\n' "$(date +%s)" "$1" >> "$EVENTS"; }
 
-# Re-asks among the last WINDOW prompts since the last level change.
+# Re-asks among the last WINDOW replies since the last level change.
 recent_hits() {
   [ -f "$EVENTS" ] || { echo 0; return; }
   tail -n $((WINDOW * 2)) "$EVENTS" | awk -F '\t' -v w="$WINDOW" '
