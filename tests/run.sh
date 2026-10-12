@@ -18,6 +18,11 @@ reply() {  # write a fake last assistant reply
   printf '{"type":"assistant","message":{"content":[{"type":"text","text":"%s"}]}}\n' "$1" > "$TRANSCRIPT"
 }
 
+tool_use() {  # append a fake tool call and its (large) result
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"%s"}}]}}\n' "$1" >> "$TRANSCRIPT"
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","content":"%s"}]}}\n' "$2" >> "$TRANSCRIPT"
+}
+
 submit() {  # $1=prompt
   printf '{"session_id":"t","transcript_path":"%s","cwd":"%s","hook_event_name":"UserPromptSubmit","prompt":"%s"}' \
     "$TRANSCRIPT" "$CLAUDE_PROJECT_DIR" "$1" | bash "$ROOT/scripts/prompt-submit.sh"
@@ -91,11 +96,25 @@ check "quoted phrase recorded" "$(proj_avoid | grep -q '^다음 회차	'; echo $
 out="$(start)"
 check "session start injects level and avoid list" "$(echo "$out" | grep -q 'avoid: .*drain' && echo "$out" | grep -q 'level="plainer"\|level="plain"'; echo $?)"
 
+# Only Claude's reply text counts, not its commands or tool output.
+reply "Lint passed."
+tool_use "npm run eslint" "eslint: 0 problems"
+out="$(submit "what is eslint?")"
+check "term only in a command → silent" "$([ -z "$out" ]; echo $?)"
+
+reply "The hook debounces saves."
+for i in $(seq 1 60); do tool_use "ls" "file$i"; done
+out="$(submit "what does debounce mean?")"
+check "reply text found past many tool calls" "$(echo "$out" | grep -q 'debounce'; echo $?)"
+
 # Promotion: the same term in a second project goes global.
 export CLAUDE_PROJECT_DIR="$TMP/proj-b"; mkdir -p "$CLAUDE_PROJECT_DIR"
 reply "We drain the queue."
 submit "what does drain mean?" > /dev/null
 check "term in 2 projects promoted to global" "$(grep -q '^drain	' "$DOCENT_HOME/avoid.txt"; echo $?)"
+
+out="$(bash "$ROOT/scripts/status.sh")"
+check "status counts other projects' terms" "$(echo "$out" | grep -q '^other projects: [0-9]* terms\{0,1\} in 1 project$'; echo $?)"
 
 # Fixed level and disable via config.
 mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"

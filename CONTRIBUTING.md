@@ -20,3 +20,7 @@ Rules:
 - `strong` lines count only when Claude has already replied, the prompt is at most 300 bytes, and no `skip` line (from any language) matches.
 - Prefer phrases that only mean "I didn't follow". A word like "simply" alone also appears in normal requests.
 - Add cases for your language to `tests/run.sh` and run `bash tests/run.sh`.
+
+## Docs
+
+`README.ko.md` is a Korean translation of `README.md`. When you change one, update the other.

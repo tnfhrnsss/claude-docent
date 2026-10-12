@@ -1,5 +1,7 @@
 # docent
 
+English | [한국어](README.ko.md)
+
 A Claude Code plugin that notices when you didn't follow an explanation — "what do you mean?", "explain it simply" — and adapts: it re-explains in plain words, remembers the terms that confused you, and keeps future answers plainer.
 
 It doesn't make answers longer and doesn't touch code, commits, or files.
