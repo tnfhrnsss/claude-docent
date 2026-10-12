@@ -29,7 +29,7 @@ Today the user has to ask for a re-explanation every time. docent handles that a
 - No output style change. Rules are layered on top of whatever style the user uses.
 - No effect on code, commit messages, or file contents. Conversation prose only.
 - No language-, domain-, or stack-specific rules in the core.
-- No external runtimes (jq, python, node). Bash 3.2 and standard Unix tools only.
+- No required external runtimes (jq, python, node). Bash 3.2 and standard Unix tools only. jq is used when present, with a sed/awk fallback that is tested too.
 
 ## 3. Token budget
 
@@ -90,7 +90,11 @@ stop	it|this|that|next|the difference|the status
 | **Strong** | Re-explain instruction + count +1 (only in a short reply to Claude with no `skip` word) |
 | **Weak** (captured X) | Treated as strong **only if X appears in Claude's last reply** |
 
-Weak signals are separate so ordinary questions such as "what's the difference between X and Y?" don't count. Only re-asking about a word Claude just used counts as a wording problem. The last reply is read from the end of the `transcript_path` file given on stdin: the last 8 assistant **text** blocks within the last 400 lines (each content block is its own line). Commands, tool input, and tool output are ignored, so a term that only appeared in `npm run lint` doesn't count, and a long run of tool calls doesn't push the reply text out of view.
+Weak signals are separate so ordinary questions such as "what's the difference between X and Y?" don't count. Only re-asking about a word Claude just used counts as a wording problem. The last reply is read from the end of the `transcript_path` file given on stdin: the last 8 assistant **text** blocks within the last 400 lines. Commands, tool input, and tool output are ignored, so a term that only appeared in `npm run lint` doesn't count, and a long run of tool calls doesn't push the reply text out of view.
+
+**Reading the transcript**: the transcript format is internal to Claude Code and may change, so parsing is loose. On each `"type":"assistant"` line, every `{"type":"text","text":"..."}` object is taken, wherever it sits in the content array, in either key order, with any whitespace between keys. With jq on `PATH`, jq reads `.message.content[]` text blocks instead; if jq is missing or finds nothing, the awk path runs. Strings inside tool calls have escaped quotes, so they can't look like a text block.
+
+**Read failures**: if an assistant line that isn't just a tool call or thinking exists but no text was found, the format probably changed. The hook stays silent (it never blocks or prints an error) and writes `read_fail=<epoch>` to `state`, keeping the first failure time; the next successful read removes it. `/docent:status` shows `reply read: ok` or `reply read: failing since <date>`. While it fails, weak signals and strong signals can't fire, because both need the last reply.
 
 **Input parsing**: without jq, `sed` extracts `"prompt":"..."` from the raw stdin JSON. Verified in a real session: non-ASCII text (e.g. Korean) arrives as raw UTF-8, not `\uXXXX` escapes.
 
@@ -98,6 +102,7 @@ Weak signals are separate so ordinary questions such as "what's the difference b
 
 - Extraction: the weak signal's X. With a strong signal, a short quoted phrase (`"..."` or `` `...` ``, up to 60 bytes) is also taken if Claude's last reply contains it. Example: `"drain" — what do you mean?`
 - Re-asks with no clear target ("what do you mean?") only count; no term is recorded.
+- Korean weak signals capture X in "X가 뭔가요/뭐예요/뭐지/뭐죠", "X는/은/이/가 무슨 뜻/말(이에요|인가요|이죠|이야 …)", and "X란?". The `strip` line removes the particle; if the stripped X is a `stop` word ("이게", "그래서", "결과가" → "결과"), no term is recorded and only the strong signal counts.
 - Storage
   - Project: `~/.claude/docent/projects/<path-as-name>/avoid.txt` first, since the term may be specific to this project's domain. Nothing is written inside the user's repo, so nothing gets committed by accident.
   - Global: `~/.claude/docent/avoid.txt`. A term is promoted once it's been recorded in **two or more different projects**, tracked as `term<TAB>project-path` lines in `seen.txt`.
@@ -113,8 +118,8 @@ Weak signals are separate so ordinary questions such as "what's the difference b
 
 - **Down**: 3 strong signals within the last 20 messages lower the level one step.
 - **Up**: 7 days without a signal raises it one step, at SessionStart.
-- State lives in `~/.claude/docent/state` (`level=` only) and `~/.claude/docent/events` (one `epoch<TAB>0|1` line per message, `epoch<TAB>R` on a level change). The window is the last 20 messages after the latest `R`; the quiet stretch is measured from the latest `1` or `R`.
-- Parallel sessions (e.g. several panes in one app) write these files at the same time. Per-message writes only append one short line (`>>`), so no session loses another's record and no hook ever waits on a lock. Avoid lists are appended too (`term<TAB>1<TAB>epoch`) and summed on read. Files are rewritten only on a level change, at session start when they grow large (compaction), and by `/docent:status`.
+- State lives in `~/.claude/docent/state` (`level=`, and `read_fail=` while replies can't be read) and `~/.claude/docent/events` (one `epoch<TAB>0|1` line per message, `epoch<TAB>R` on a level change). The window is the last 20 messages after the latest `R`; the quiet stretch is measured from the latest `1` or `R`.
+- Parallel sessions (e.g. several panes in one app) write these files at the same time. Per-message writes only append one short line (`>>`), so no session loses another's record and no hook ever waits on a lock. Avoid lists are appended too (`term<TAB>1<TAB>epoch`) and summed on read. Files are rewritten only on a level change, when reply reading starts or stops failing, at session start when they grow large (compaction), and by `/docent:status`.
 - The level is global only. It reflects the person, not the project.
 
 ### 5.4 Injected text
@@ -219,8 +224,12 @@ bash tests/run.sh                                # hook tests
 | 11 | A task or bug report with a signal phrase ("이 에러가 왜 나는지 이해가 안 돼요", "I'm confused why this test fails") | Nothing printed |
 | 12 | A term that appeared only in a command Claude ran, not in its reply | Nothing recorded |
 | 13 | Several sessions submitting at the same moment | Every message and term is recorded; no hook waits |
+| 14 | A transcript whose assistant lines have no readable text block | Nothing printed; `read_fail` set; `/docent:status` shows `failing since`; cleared on the next readable reply |
+| 15 | Text block with spaces between keys, not first in the array, or keys reversed | Read the same way with and without jq |
+| 16 | "드레인은 무슨 뜻이에요?", "드레인이란?", "드레인이 뭐지" | "드레인" recorded; "이게 무슨 말인가요" counts with no term |
 
 ## 8. Later
 
 - More signals languages (ja, zh, es, de, fr, pt …).
 - Windows: hooks run through Git Bash, so the README notes that Git for Windows is required. Add a PowerShell version if needed.
+- Stop hook: its input has `last_assistant_message`, which the hooks docs recommend over the transcript (written asynchronously). Saving it per session would avoid depending on the transcript format. Not done yet: by the time the user types the next prompt the transcript is almost always written, the transcript path is still needed when the user interrupts (Stop doesn't run), and what the field holds for a reply with several text blocks isn't documented. Revisit if `reply read: failing` shows up.
