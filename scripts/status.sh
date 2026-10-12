@@ -3,11 +3,9 @@
 
 . "$(dirname "$0")/lib.sh"
 
-case "$1" in reset|forget) lock;; esac
-
 case "$1" in
   reset)
-    rm -f "$STATE" "$GLOBAL_AVOID" "$SEEN" "$(project_data)/avoid.txt"
+    rm -f "$STATE" "$EVENTS" "$GLOBAL_AVOID" "$SEEN" "$(project_data)/avoid.txt"
     echo "docent: level and remembered terms reset."
     exit 0 ;;
   forget)
@@ -22,6 +20,6 @@ esac
 
 enabled && on=on || on=off
 echo "docent: $on, level=$(current_level) ($(config_get level auto))"
-echo "recent re-asks: $(state_get recent | tr -cd 1 | wc -c | tr -d ' ')/$WINDOW"
-echo "global terms:  $(cut -f1 "$GLOBAL_AVOID" 2>/dev/null | paste -sd, - | sed 's/,/, /g')"
-echo "project terms: $(cut -f1 "$(project_data)/avoid.txt" 2>/dev/null | paste -sd, - | sed 's/,/, /g')"
+echo "recent re-asks: $(recent_hits)/$WINDOW"
+echo "global terms:  $(cut -f1 "$GLOBAL_AVOID" 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"
+echo "project terms: $(cut -f1 "$(project_data)/avoid.txt" 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"

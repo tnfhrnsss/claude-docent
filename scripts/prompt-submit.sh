@@ -8,7 +8,6 @@ INPUT="$(cat)"
 HOOK_CWD="$(json_str "$INPUT" cwd)"
 
 enabled || exit 0
-lock
 
 PROMPT="$(json_str "$INPUT" prompt | tr 'A-Z' 'a-z')"
 TRANSCRIPT="$(json_str "$INPUT" transcript_path)"
@@ -72,7 +71,7 @@ for f in "$ROOT"/signals/*.txt; do
 done
 
 [ "$signal" = 1 ] || {
-  auto_mode && state_set recent "$(recent_tail)0"
+  auto_mode && event_add 0
   exit 0
 }
 
@@ -87,16 +86,13 @@ fi
 LEVEL="$(current_level)"
 note=""
 if auto_mode; then
-  recent="$(recent_tail)1"
-  state_set last_signal "$(date +%s)"
-  hits="$(printf '%s' "$recent" | tr -cd 1 | wc -c | tr -d ' ')"
-  if [ "$hits" -ge "$STEP_DOWN_AT" ] && [ "$LEVEL" != plainer ]; then
+  event_add 1
+  if [ "$(recent_hits)" -ge "$STEP_DOWN_AT" ] && [ "$LEVEL" != plainer ]; then
     LEVEL="$(shift_level 1)"
     state_set level "$LEVEL"
-    recent=""
+    event_add R
     note=" $(cat "$ROOT/profiles/levels/$LEVEL.md")"
   fi
-  state_set recent "$recent"
 fi
 
 about=""

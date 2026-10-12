@@ -8,6 +8,7 @@ DATA="${DOCENT_HOME:-$HOME/.claude/docent}"
 STATE="$DATA/state"
 GLOBAL_AVOID="$DATA/avoid.txt"
 SEEN="$DATA/seen.txt"
+EVENTS="$DATA/events"   # one line per prompt: epoch<TAB>0|1, or epoch<TAB>R on a level change
 
 LEVELS="normal plain plainer"
 WINDOW=20          # recent prompts considered for stepping down
@@ -16,21 +17,9 @@ STEP_UP_DAYS=7     # quiet days before raising the level
 AVOID_MAX=30       # terms injected per session
 STRONG_MAX_BYTES=300  # longer prompts are tasks, not re-asks
 
-# --- lock -------------------------------------------------------------------
-
-# Hooks from parallel sessions update the same files; serialize them. mkdir is
-# atomic everywhere (macOS has no flock). A lock older than ~5s is stale.
-LOCK="$DATA/.lock"
-lock() {
-  local i=0
-  mkdir -p "$DATA"
-  until mkdir "$LOCK" 2>/dev/null; do
-    i=$((i + 1))
-    [ $i -ge 50 ] && { rmdir "$LOCK" 2>/dev/null; i=0; }
-    sleep 0.1
-  done
-  trap 'rmdir "$LOCK" 2>/dev/null' EXIT
-}
+# Parallel sessions (e.g. Orca panes) write the same files at once. Hot paths
+# only append one short line (>>), which can't lose another session's write;
+# files are rewritten only on rare events (level change, compaction, status).
 
 # --- key=value files ---------------------------------------------------------
 
@@ -106,16 +95,18 @@ json_str() {  # $1=json $2=key — returns the unescaped string value
 
 # --- avoid list -------------------------------------------------------------
 
-# Lines: term<TAB>count<TAB>last_epoch
+# Lines: term<TAB>count<TAB>last_epoch. Appended; repeated terms are summed on read.
 avoid_add() {  # $1=file $2=term
   mkdir -p "$(dirname "$1")"
-  local now tmp="$1.$$"
-  now="$(date +%s)"
-  awk -F '\t' -v t="$2" -v now="$now" 'BEGIN{OFS="\t"}
-    $1==t {$2=$2+1; $3=now; found=1} {print}
-    END{if(!found) print t, 1, now}' "${1}" 2>/dev/null > "$tmp" \
-    || printf '%s\t1\t%s\n' "$2" "$now" > "$tmp"
-  mv "$tmp" "$1"
+  printf '%s\t1\t%s\n' "$2" "$(date +%s)" >> "$1"
+}
+
+# Merge repeated lines into one per term. Run at session start, not per prompt.
+avoid_compact() {  # $1=file
+  [ -f "$1" ] || return 0
+  [ "$(wc -l < "$1")" -gt 200 ] || return 0
+  awk -F '\t' 'BEGIN{OFS="\t"} NF>=2 {c[$1]+=$2; if($3>l[$1]) l[$1]=$3}
+    END{for(t in c) print t, c[t], l[t]}' "$1" > "$1.$$" && mv "$1.$$" "$1"
 }
 
 # Record a term for this project; promote it to global once seen in 2+ projects.
@@ -125,7 +116,7 @@ record_term() {  # $1=term
   avoid_add "$(project_data)/avoid.txt" "$1"
   mkdir -p "$DATA"
   grep -qxF "$1	$proj" "$SEEN" 2>/dev/null || printf '%s\t%s\n' "$1" "$proj" >> "$SEEN"
-  if [ "$(awk -F '\t' -v t="$1" '$1==t' "$SEEN" | wc -l)" -ge 2 ]; then
+  if [ "$(awk -F '\t' -v t="$1" '$1==t && !p[$2]++ {n++} END{print n+0}' "$SEEN")" -ge 2 ]; then
     avoid_add "$GLOBAL_AVOID" "$1"
   fi
 }
@@ -137,5 +128,29 @@ avoid_list() {
     | sort -rn | head -n "$AVOID_MAX" | cut -f2 | paste -sd, - | sed 's/,/, /g'
 }
 
-# Last WINDOW-1 entries of the 0/1 history, so appending one keeps WINDOW.
-recent_tail() { printf '%s' "$(state_get recent)" | tail -c $((WINDOW - 1)); }
+# --- events -----------------------------------------------------------------
+
+event_add() { mkdir -p "$DATA"; printf '%s\t%s\n' "$(date +%s)" "$1" >> "$EVENTS"; }
+
+# Re-asks among the last WINDOW prompts since the last level change.
+recent_hits() {
+  [ -f "$EVENTS" ] || { echo 0; return; }
+  tail -n $((WINDOW * 2)) "$EVENTS" | awk -F '\t' -v w="$WINDOW" '
+    $2=="R" {n=0; next} {a[n++]=$2}
+    END{h=0; for(i=(n>w?n-w:0); i<n; i++) if(a[i]=="1") h++; print h}'
+}
+
+# Epoch of the last re-ask or level change (legacy state key as fallback).
+last_activity() {
+  local e
+  e="$(awk -F '\t' '$2!="0" {l=$1} END{print l}' "$EVENTS" 2>/dev/null)"
+  [ -n "$e" ] || e="$(state_get last_signal)"
+  echo "$e"
+}
+
+events_compact() {
+  [ -f "$EVENTS" ] && [ "$(wc -l < "$EVENTS")" -gt 1000 ] || return 0
+  # Keep the window plus the latest non-0 line so last_activity survives.
+  { awk -F '\t' '$2!="0" {l=$0} END{if(l!="") print l}' "$EVENTS"; tail -n $((WINDOW * 2)) "$EVENTS"; } \
+    > "$EVENTS.$$" && mv "$EVENTS.$$" "$EVENTS"
+}
