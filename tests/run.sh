@@ -124,6 +124,17 @@ check "status shows familiar" "$(bash "$ROOT/scripts/status.sh" | grep -q '^fami
 bash "$ROOT/scripts/status.sh" familiar > /dev/null
 out="$(start)"
 check "empty familiar clears it" "$(! echo "$out" | grep -q '^familiar:'; echo $?)"
+check "no familiar → nothing injected" "$(! echo "$out" | grep -q 'familiar'; echo $?)"
+
+printf 'level=auto  # keep me\n' > "$DOCENT_HOME/config"
+bash "$ROOT/scripts/status.sh" familiar vue > /dev/null
+check "familiar keeps other config lines" "$(grep -qx 'level=auto  # keep me' "$DOCENT_HOME/config" && grep -qx 'familiar=vue' "$DOCENT_HOME/config"; echo $?)"
+
+mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"
+printf 'familiar=spring, java  # this project\n' > "$CLAUDE_PROJECT_DIR/.claude/docent/config"
+out="$(start)"
+check "project familiar overrides global" "$(echo "$out" | grep -q '^familiar: spring, java\. '; echo $?)"
+rm "$CLAUDE_PROJECT_DIR/.claude/docent/config" "$DOCENT_HOME/config"
 
 # Fixed level and disable via config.
 mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"
