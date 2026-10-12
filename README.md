@@ -46,7 +46,7 @@ Changes apply from the next session or `/clear`.
 
 ## Commands
 
-- `/docent:status` — show the current level and remembered terms
+- `/docent:status` — show the current level and remembered terms. `reply read: failing since <date>` means docent can't read Claude's replies from the transcript (its format may have changed), so it can't tell which terms came from Claude; please open an issue
 - `/docent:status familiar <stacks>` — set the stacks you know (e.g. `react, typescript`); with no stacks, clear it
 - `/docent:status forget <term>` — stop avoiding a term
 - `/docent:status reset` — clear the level and all remembered terms

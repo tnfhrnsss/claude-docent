@@ -46,7 +46,7 @@ familiar=react, typescript   # 잘 아는 스택 (선택)
 
 ## 명령
 
-- `/docent:status` — 현재 단계와 기억된 단어를 보여 줍니다
+- `/docent:status` — 현재 단계와 기억된 단어를 보여 줍니다. `reply read: failing since <날짜>`가 보이면 대화 기록에서 Claude의 답변을 읽지 못하고 있다는 뜻입니다(기록 형식이 바뀌었을 수 있습니다). 이때는 단어가 Claude 답변에서 나왔는지 확인할 수 없으니 이슈로 알려 주세요
 - `/docent:status familiar <스택>` — 잘 아는 스택을 설정합니다 (예: `react, typescript`). 스택 없이 실행하면 설정을 지웁니다
 - `/docent:status forget <단어>` — 그 단어를 더 이상 피하지 않습니다
 - `/docent:status reset` — 단계와 기억된 단어를 모두 지웁니다

@@ -38,7 +38,8 @@ check() {  # $1=name $2=condition result (0 ok)
   else fail=$((fail + 1)); echo "FAIL $1"; fi
 }
 
-proj_avoid() { cat "$DOCENT_HOME/projects/$(echo "$CLAUDE_PROJECT_DIR" | sed 's#[/:\\ ]#-#g')/avoid.txt" 2>/dev/null; }
+proj_avoid_path() { echo "$DOCENT_HOME/projects/$(echo "$CLAUDE_PROJECT_DIR" | sed 's#[/:\\ ]#-#g')/avoid.txt"; }
+proj_avoid() { cat "$(proj_avoid_path)" 2>/dev/null; }
 level() { sed -n 's/^level=//p' "$DOCENT_HOME/state" 2>/dev/null; }
 
 out="$(submit "what do you mean?")"
@@ -174,6 +175,67 @@ check "10 parallel term records all kept" "$([ $((after - before)) = 10 ]; echo 
 for i in $(seq 1 250); do printf 'lint\t1\t1\n'; done >> "$DOCENT_HOME/avoid.txt"
 start > /dev/null
 check "avoid list compacted, count kept" "$(grep -q '^lint	250	' "$DOCENT_HOME/avoid.txt" && [ "$(wc -l < "$DOCENT_HOME/avoid.txt" | tr -d ' ')" -le 3 ]; echo $?)"
+
+# Korean term questions: each form records the term.
+for p in "드레인은 무슨 뜻이에요?" "드레인이 무슨 말이에요" "드레인이 무슨 뜻인가요" "드레인 무슨 뜻이야" \
+         "드레인이란?" "드레인이란" "드레인이 뭐지" "드레인이 뭐죠?"; do
+  reply "이 단계에서 큐를 드레인하고 다음 회차로 넘어갑니다. 그래서 결과가 같습니다."
+  rm -f "$(proj_avoid_path)"
+  out="$(submit "$p")"
+  check "korean term question records term: $p" "$(echo "$out" | grep -q 'of \"드레인\"' && proj_avoid | grep -q '^드레인	'; echo $?)"
+done
+for p in "이게 무슨 말인가요" "그래서 무슨 뜻이에요?" "결과가 무슨 말이에요"; do
+  out="$(submit "$p")"
+  check "korean question without a target counts, no term: $p" "$(echo "$out" | grep -q 'may not have followed' && ! echo "$out" | grep -q ' of \"'; echo $?)"
+done
+
+# Reading the reply: loose JSON, with and without jq.
+mkdir -p "$TMP/nojq"
+IFS=: read -ra dirs <<< "$PATH"
+for d in "${dirs[@]}"; do
+  for f in "$d"/*; do
+    n="${f##*/}"
+    [ "$n" = jq ] || [ -e "$TMP/nojq/$n" ] || ln -s "$f" "$TMP/nojq/$n" 2> /dev/null
+  done
+done
+
+parse_cases() {  # $1=label
+  printf '{"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "x"}, {"type": "text", "text": "We drain it."}]}}\n' > "$TRANSCRIPT"
+  out="$(submit "what does drain mean?")"
+  check "$1: spaced keys, text not first" "$(echo "$out" | grep -q 'of \"drain\"'; echo $?)"
+
+  printf '{"type":"assistant","message":{"content":[{"text":"Then pin the SHA.","type":"text"}]}}\n' > "$TRANSCRIPT"
+  out="$(submit "what does pin mean?")"
+  check "$1: reversed key order" "$(echo "$out" | grep -q 'of \"pin\"'; echo $?)"
+
+  reply "Lint passed."
+  tool_use "npm run eslint" "eslint: 0 problems"
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"text","text":"eslint ok"}]}]}}\n' >> "$TRANSCRIPT"
+  out="$(submit "what is eslint?")"
+  check "$1: term only in a command or tool output → silent" "$([ -z "$out" ]; echo $?)"
+}
+if command -v jq > /dev/null; then parse_cases "with jq"; else echo "skip with jq: jq not installed"; fi
+PATH="$TMP/nojq" parse_cases "without jq"
+check "test PATH really hides jq" "$(! PATH="$TMP/nojq" command -v jq > /dev/null; echo $?)"
+
+# A reply that can't be read is recorded quietly and shown in status.
+read_fail() { sed -n 's/^read_fail=//p' "$DOCENT_HOME/state" 2>/dev/null; }
+printf '{"type":"assistant","message":{"content":[{"kind":"words","value":"We drain it."}]}}\n' > "$TRANSCRIPT"
+out="$(submit "how do I add a route?" 2> "$TMP/err")"; rc=$?
+check "unreadable reply: silent, exit 0" "$([ $rc = 0 ] && [ -z "$out" ] && [ ! -s "$TMP/err" ]; echo $?)"
+check "unreadable reply: read_fail recorded" "$(read_fail | grep -qE '^[0-9]+$'; echo $?)"
+first="$(read_fail)"
+submit "how do I add a route?" > /dev/null
+check "read_fail keeps the first failure time" "$([ "$(read_fail)" = "$first" ]; echo $?)"
+check "status shows reply read failing" "$(bash "$ROOT/scripts/status.sh" | grep -qE '^reply read: +failing since [0-9]{4}-[0-9]{2}-[0-9]{2} '; echo $?)"
+reply "We drain the queue."
+submit "how do I add a route?" > /dev/null
+check "readable reply clears read_fail" "$([ -z "$(read_fail)" ]; echo $?)"
+check "status shows reply read ok" "$(bash "$ROOT/scripts/status.sh" | grep -qE '^reply read: +ok$'; echo $?)"
+: > "$TRANSCRIPT"; tool_use "ls" "a.txt"
+submit "how do I add a route?" > /dev/null
+check "tool-call-only reply is not a read failure" "$([ -z "$(read_fail)" ]; echo $?)"
+reply "We drain the queue."
 
 # Hooks fail open: broken data never surfaces as an error or a non-zero exit.
 printf 'level=plain\n' > "$DOCENT_HOME/state"

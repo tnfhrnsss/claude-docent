@@ -14,13 +14,54 @@ TRANSCRIPT="$(json_str "$INPUT" transcript_path)"
 [ -n "$PROMPT" ] || exit 0
 
 # Text of Claude's most recent replies, for checking that a term came from Claude.
-# Each content block is its own transcript line; keep only text blocks, so terms
-# from commands and tool output don't count and tool calls don't crowd them out.
+# Keep only text blocks, so terms from commands and tool output don't count and
+# tool calls don't crowd them out. One block per output line.
+S='[[:space:]]*'
+ASSISTANT="\"type\"$S:$S\"assistant\""
+
+reply_text_jq() {
+  jq -R -r 'fromjson? | objects | select(.type == "assistant") | .message.content?
+    | arrays | .[] | objects | select(.type == "text") | .text | strings
+    | gsub("\n"; " ")' 2> /dev/null
+}
+
+# Without jq: every {"type":"text","text":"..."} object on the line, in either
+# key order. Strings inside tool calls have escaped quotes, so they never match.
+reply_text_awk() {
+  awk -v a="$ASSISTANT" -v s="$S" '
+    $0 ~ a {
+      str = "\"([^\"\\\\]|\\\\.)*\""
+      ty = "\"type\"" s ":" s "\"text\""
+      tx = "\"text\"" s ":" s
+      re[1] = ty s "," s tx str; re[2] = tx str s "," s ty
+      for (i = 1; i <= 2; i++) {
+        line = $0
+        while (match(line, re[i])) {
+          m = substr(line, RSTART, RLENGTH); line = substr(line, RSTART + RLENGTH)
+          if (i == 1) { sub("^" ty s "," s tx "\"", "", m); sub("\"$", "", m) }
+          else { sub("^" tx "\"", "", m); sub("\"" s "," s ty "$", "", m) }
+          print m
+        }
+      }
+    }'
+}
+
 LAST_REPLY=""
 if [ -f "$TRANSCRIPT" ]; then
-  LAST_REPLY="$(tail -n 400 "$TRANSCRIPT" | grep '"type":"assistant"' \
-    | sed -E -n 's/^.*"content":\[\{"type":"text","text":"(([^"\\]|\\.)*)".*$/\1/p' \
-    | tail -n "$REPLY_BLOCKS")"
+  RECENT="$(tail -n 400 "$TRANSCRIPT" 2> /dev/null)"
+  command -v jq > /dev/null 2>&1 && LAST_REPLY="$(printf '%s\n' "$RECENT" | reply_text_jq)"
+  [ -n "$LAST_REPLY" ] || LAST_REPLY="$(printf '%s\n' "$RECENT" | reply_text_awk 2> /dev/null)"
+  LAST_REPLY="$(printf '%s' "$LAST_REPLY" | tail -n "$REPLY_BLOCKS")"
+
+  # Claude replied (a line that is not just a tool call or thinking) but no text
+  # was found: the transcript format probably changed. /docent:status shows it.
+  replied="$(printf '%s\n' "$RECENT" | grep -E -- "$ASSISTANT" \
+    | grep -vE -- "\"type\"$S:$S\"(tool_use|thinking|redacted_thinking)\"" | head -n 1)"
+  if [ -n "$LAST_REPLY" ]; then
+    [ -n "$(state_get read_fail)" ] && state_set read_fail "" 2> /dev/null
+  elif [ -n "$replied" ] && [ -z "$(state_get read_fail)" ]; then
+    state_set read_fail "$(date +%s)" 2> /dev/null
+  fi
 fi
 
 in_reply() {  # $1=term
@@ -38,6 +79,8 @@ resolve_term() {  # $1=raw term $2=strip regex $3=stop regex
   raw="$(printf '%s' "$1" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
   stripped="$raw"
   [ -n "$2" ] && stripped="$(printf '%s' "$raw" | sed -E "s/$2//")"
+  # A stop word with a particle ("결과가") is still a stop word.
+  [ -n "$3" ] && printf '%s' "$stripped" | grep -qxE -- "$3" && return
   for t in "$stripped" "$raw"; do
     long_enough "$t" || continue
     [ -n "$3" ] && printf '%s' "$t" | grep -qxE -- "$3" && continue
