@@ -16,6 +16,7 @@ STEP_DOWN_AT=3     # signals within WINDOW that lower the level
 STEP_UP_DAYS=7     # quiet days before raising the level
 AVOID_MAX=30       # terms injected per session
 STRONG_MAX_BYTES=300  # longer prompts are tasks, not re-asks
+REPLY_BLOCKS=8     # recent reply text blocks searched for a term
 
 # Parallel sessions (e.g. Orca panes) write the same files at once. Hot paths
 # only append one short line (>>), which can't lose another session's write;

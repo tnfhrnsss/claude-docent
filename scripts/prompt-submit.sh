@@ -14,9 +14,13 @@ TRANSCRIPT="$(json_str "$INPUT" transcript_path)"
 [ -n "$PROMPT" ] || exit 0
 
 # Text of Claude's most recent replies, for checking that a term came from Claude.
+# Each content block is its own transcript line; keep only text blocks, so terms
+# from commands and tool output don't count and tool calls don't crowd them out.
 LAST_REPLY=""
 if [ -f "$TRANSCRIPT" ]; then
-  LAST_REPLY="$(tail -n 80 "$TRANSCRIPT" | grep '"type":"assistant"' | tail -n 20)"
+  LAST_REPLY="$(tail -n 400 "$TRANSCRIPT" | grep '"type":"assistant"' \
+    | sed -E -n 's/^.*"content":\[\{"type":"text","text":"(([^"\\]|\\.)*)".*$/\1/p' \
+    | tail -n "$REPLY_BLOCKS")"
 fi
 
 in_reply() {  # $1=term

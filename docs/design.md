@@ -90,7 +90,7 @@ stop	it|this|that|next|the difference|the status
 | **Strong** | Re-explain instruction + count +1 (only in a short reply to Claude with no `skip` word) |
 | **Weak** (captured X) | Treated as strong **only if X appears in Claude's last reply** |
 
-Weak signals are separate so ordinary questions such as "what's the difference between X and Y?" don't count. Only re-asking about a word Claude just used counts as a wording problem. The last reply is read from the end of the `transcript_path` file given on stdin (`tail`, then `grep -F` on assistant lines).
+Weak signals are separate so ordinary questions such as "what's the difference between X and Y?" don't count. Only re-asking about a word Claude just used counts as a wording problem. The last reply is read from the end of the `transcript_path` file given on stdin: the last 8 assistant **text** blocks within the last 400 lines (each content block is its own line). Commands, tool input, and tool output are ignored, so a term that only appeared in `npm run lint` doesn't count, and a long run of tool calls doesn't push the reply text out of view.
 
 **Input parsing**: without jq, `sed` extracts `"prompt":"..."` from the raw stdin JSON. Verified in a real session: non-ASCII text (e.g. Korean) arrives as raw UTF-8, not `\uXXXX` escapes.
 
