@@ -101,7 +101,7 @@ Weak signals are separate so ordinary questions such as "what's the difference b
 - Storage
   - Project: `~/.claude/docent/projects/<path-as-name>/avoid.txt` first, since the term may be specific to this project's domain. Nothing is written inside the user's repo, so nothing gets committed by accident.
   - Global: `~/.claude/docent/avoid.txt`. A term is promoted once it's been recorded in **two or more different projects**, tracked as `term<TAB>project-path` lines in `seen.txt`.
-- Format: one term per line, `term<TAB>count<TAB>last-epoch`. Only the terms are injected, most frequent first, up to 30.
+- Format: `term<TAB>count<TAB>last-epoch` lines. A term may appear on several lines (each record is appended); counts are summed on read and merged at session start once a file passes 200 lines. Only the terms are injected, most frequent first, up to 30.
 
 ### 5.3 Levels
 
@@ -136,7 +136,7 @@ Reply in the user's language.
 
 **Re-explain instruction (UserPromptSubmit, only on a re-ask)**
 ```
-<docent>The user did not follow your last explanation{ of "X"}. Re-explain only that part in everyday words, within {N} lines. No new concepts, no preamble.</docent>
+<docent>The user may not have followed your last explanation{ of "X"}. If this message asks about it, re-explain only that part in everyday words, within {N} lines. No new concepts, no preamble. If it is a new request or a question about something else, ignore this note.</docent>
 ```
 
 ### 5.5 Configuration
@@ -163,7 +163,7 @@ claude-docent/                 # repo root = plugin root
 │   ├── session-start.sh
 │   ├── prompt-submit.sh
 │   ├── status.sh              # backs /docent:status
-│   └── lib.sh                 # config, state, and avoid-list helpers
+│   └── lib.sh                 # config, state, events, and avoid-list helpers
 ├── profiles/                  # injected text (English)
 │   ├── core.md
 │   └── levels/{normal,plain,plainer}.md
@@ -177,7 +177,8 @@ claude-docent/                 # repo root = plugin root
 ├── .gitattributes             # *.sh text eol=lf
 ├── CONTRIBUTING.md            # how to add a signals file
 ├── LICENSE                    # MIT
-└── README.md
+├── README.md
+└── README.ko.md               # Korean translation of README.md
 ```
 
 - The `status` skill sets `disable-model-invocation: true`, so it runs only when the user calls it and uses no context otherwise.
@@ -189,7 +190,7 @@ claude-docent/                 # repo root = plugin root
 claude plugin validate .                         # manifest and path checks
 claude --plugin-dir .                            # run without installing
 bash tests/run.sh                                # hook tests
-/plugin marketplace add ~/Documents/claude_plugins/claude-docent
+/plugin marketplace add <path-to-this-repo>
 /plugin install docent@docent                    # install for all projects (user scope)
 ```
 
@@ -208,6 +209,9 @@ bash tests/run.sh                                # hook tests
 | 8 | Same question with the plugin on and off | Answers are about the same length |
 | 9 | A coding request | No effect on code or files |
 | 10 | After `/compact` | Rules are injected again via SessionStart (compact) |
+| 11 | A task or bug report with a signal phrase ("이 에러가 왜 나는지 이해가 안 돼요", "I'm confused why this test fails") | Nothing printed |
+| 12 | A term that appeared only in a command Claude ran, not in its reply | Nothing recorded |
+| 13 | Several sessions submitting at the same moment | Every message and term is recorded; no hook waits |
 
 ## 8. Later
 
