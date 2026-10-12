@@ -21,7 +21,7 @@ Today the user has to ask for a re-explanation every time. docent handles that a
 
 **Goals**
 1. **Prevent**: keep explanations at an average level, but avoid the patterns above from the start.
-2. **Detect**: a hook notices when the user re-asks.
+2. **Detect**: Claude itself judges, in any language, when the user didn't follow, and marks that reply so a hook can record it.
 3. **Adapt**: re-explain plainly in that turn; if it keeps happening, lower the level; remember the confusing terms and avoid them later.
 
 **Non-goals**
@@ -29,84 +29,69 @@ Today the user has to ask for a re-explanation every time. docent handles that a
 - No output style change. Rules are layered on top of whatever style the user uses.
 - No effect on code, commit messages, or file contents. Conversation prose only.
 - No language-, domain-, or stack-specific rules in the core.
-- No required external runtimes (jq, python, node). Bash 3.2 and standard Unix tools only. jq is used when present, with a sed/awk fallback that is tested too.
+- No external runtimes (jq, python, node). Bash 3.2 and standard Unix tools only.
+- No extra model calls. The judgment comes from the reply Claude is already writing.
 
 ## 3. Token budget
 
 | Item | When | Cap |
 |---|---|---|
-| SessionStart injection (core rules + level + avoid list) | Session start, `/clear`, after compaction | ~600 tokens |
-| UserPromptSubmit injection | **Only on a re-ask** | ~80 tokens |
+| SessionStart injection (core rules + level + avoid list) | Session start, `/clear`, after compaction | ~650 tokens |
+| UserPromptSubmit injection | **Only right after the level changed** | ~40 tokens |
 | UserPromptSubmit injection | Every other message | **0** (prints nothing) |
 | Output tokens | Normally | Unchanged (rewording only) |
-| Output tokens | When re-explaining | Only the part in question, capped per level |
+| Output tokens | When re-explaining | Only the part in question, capped per level, plus the marker line (~5 tokens) |
 
-- Detection and recording run in bash. No LLM calls.
-- Claude never writes the data files itself. Tool calls would cost output tokens and trigger permission prompts.
+- Recording runs in bash. No extra LLM calls.
+- Claude never writes the data files itself. Tool calls would cost output tokens and trigger permission prompts; a marker line in the reply costs a few tokens and no prompt.
 
 ## 4. Flow
 
 ```
 Session start ─▶ session-start.sh
                   ├ step the level back up after a quiet stretch (5.3)
+                  ├ remember which level this session was told (sessions/<id>)
                   └ print: core rules + level rules + avoid list (global + project, max 30)
 
-User message ──▶ prompt-submit.sh
-                  ├ not a re-ask → exit, print nothing
-                  └ re-ask
-                      ├ extract the term → record it if Claude's last reply used it
-                      ├ count the re-ask → lower the level past the threshold
-                      └ print: one-line re-explain instruction (+ new level rules if it changed)
+User message ──▶ Claude judges: did the user not follow my last explanation?
+                  └ yes → re-explain briefly, end the reply with "(docent: X)" or "(docent)"
+
+Reply done ────▶ stop.sh (last_assistant_message)
+                  ├ no marker on the last line → count 0
+                  └ marker → record X, count 1, lower the level past the threshold
+
+Next message ──▶ prompt-submit.sh
+                  └ level differs from what this session was told → print the new level rules once
 ```
 
 ## 5. Details
 
-### 5.1 Detection: two layers
+### 5.1 Detection: Claude judges, the reply carries the result
 
-Because there are many languages, detection has two layers.
+Earlier versions matched the user's prompt against per-language regex files (`signals/<lang>.txt`). That missed paraphrases, misfired on task requests and pasted text, and needed a file per language. Claude already reads the message in context and, under the core rules, already decides whether to re-explain. docent now just collects that decision.
 
-| Layer | Who | Languages | What it does | Cost |
-|---|---|---|---|---|
-| **1: Claude itself** | Claude (core rules) | All | Re-explains briefly and plainly when the user re-asks | One line in the core rules |
-| **2: Hook** | `prompt-submit.sh` | Those with a signals file | Counts re-asks, records terms, adjusts the level (persistent) | 0 (bash) |
+**Marker**: the core rules tell Claude that when it re-explains because the user didn't follow something it wrote, it ends the reply with one last line, `(docent: X)` (X = its own word or short phrase that confused the user, as it wrote it) or `(docent)` (no single term). It adds the line only then. The format is fixed and language-neutral, so every language works without extra files.
 
-Layer 1 means the in-turn re-explanation works even without a signals file. Layer 2 handles learning and persistence, and grows as signals files are added.
+**Why a visible line**: tested in a real session, the Claude Code terminal shows both HTML comments (`<!-- ... -->`) and Markdown link definitions (`[//]: # (...)`) as plain text, so there is no hidden channel in the reply. A short visible line also tells the user what was remembered; a wrong term can be removed with `/docent:status forget`.
 
-**Signals files**: `signals/<lang>.txt`, one language per file so the community can add languages by PR. Lines are one of five kinds: `strong`, `weak` (with a capture-group number), `strip` (suffixes such as particles to remove from a term), `stop` (words never treated as terms), and `skip` (words of a task or bug report, such as "error" or "fix"; a prompt containing one is not a strong signal). Strong signals also need an earlier Claude reply and a prompt of at most 300 bytes. CONTRIBUTING.md has the full rules. The first release ships `en` and `ko`; `ja`, `zh`, `es`, `de`, and others can follow.
+**Reading it**: the Stop hook input has `last_assistant_message`. Verified in a real session (2026-10):
+- The hook input is one line of JSON; newlines in the message are `\n` escapes and non-ASCII text (e.g. Korean) is raw UTF-8.
+- For a reply with several text blocks (text, tool calls, more text), the field holds **only the last text block**. The marker therefore goes at the very end.
+- A change to hook settings applied to a running session without a restart.
 
-```
-# signals/en.txt (excerpt)
-strong	what do (you|u) mean
-strong	i (don'?t|do not|didn'?t|did not) (get|understand|follow)
-weak	2	what does (the |an? )?([a-z0-9_.-]+( [a-z0-9_.-]+){0,2}) mean
-stop	it|this|that|next|the difference|the status
-```
+`stop.sh` matches the raw JSON: `\n(docent[: X])` followed only by whitespace or `\n` and the closing quote. So the marker must be the last line; a marker quoted mid-reply or inline in backticks doesn't count. No jq is needed.
 
-- Patterns from all signals files are checked together. The user's language is not detected.
-- Matching is POSIX ERE under `LC_ALL=C`, against the prompt with ASCII letters lowercased.
-
-| Signal | Handling |
-|---|---|
-| **Strong** | Re-explain instruction + count +1 (only in a short reply to Claude with no `skip` word) |
-| **Weak** (captured X) | Treated as strong **only if X appears in Claude's last reply** |
-
-Weak signals are separate so ordinary questions such as "what's the difference between X and Y?" don't count. Only re-asking about a word Claude just used counts as a wording problem. The last reply is read from the end of the `transcript_path` file given on stdin: the last 8 assistant **text** blocks within the last 400 lines. Commands, tool input, and tool output are ignored, so a term that only appeared in `npm run lint` doesn't count, and a long run of tool calls doesn't push the reply text out of view.
-
-**Reading the transcript**: the transcript format is internal to Claude Code and may change, so parsing is loose. On each `"type":"assistant"` line, every `{"type":"text","text":"..."}` object is taken, wherever it sits in the content array, in either key order, with any whitespace between keys. With jq on `PATH`, jq reads `.message.content[]` text blocks instead; if jq is missing or finds nothing, the awk path runs. Strings inside tool calls have escaped quotes, so they can't look like a text block.
-
-**Read failures**: if an assistant line that isn't just a tool call or thinking exists but no text was found, the format probably changed. The hook stays silent (it never blocks or prints an error) and writes `read_fail=<epoch>` to `state`, keeping the first failure time; the next successful read removes it. `/docent:status` shows `reply read: ok` or `reply read: failing since <date>`. While it fails, weak signals and strong signals can't fire, because both need the last reply.
-
-**Input parsing**: without jq, `sed` extracts `"prompt":"..."` from the raw stdin JSON. Verified in a real session: non-ASCII text (e.g. Korean) arrives as raw UTF-8, not `\uXXXX` escapes.
+**Gaps**: if the user interrupts the reply, Stop doesn't run and that re-ask isn't recorded. If Claude forgets the marker, the re-ask isn't recorded either; the re-explanation itself still happens.
 
 ### 5.2 Recording terms
 
-- Extraction: the weak signal's X. With a strong signal, a short quoted phrase (`"..."` or `` `...` ``, up to 60 bytes) is also taken if Claude's last reply contains it. Example: `"drain" — what do you mean?`
-- Re-asks with no clear target ("what do you mean?") only count; no term is recorded.
-- Korean weak signals capture X in "X가 뭔가요/뭐예요/뭐지/뭐죠", "X는/은/이/가 무슨 뜻/말(이에요|인가요|이죠|이야 …)", and "X란?". The `strip` line removes the particle; if the stripped X is a `stop` word ("이게", "그래서", "결과가" → "결과"), no term is recorded and only the strong signal counts.
+- Terms: up to 3 comma-separated in one marker, ASCII letters lowercased, control characters removed, at most 60 bytes each.
+- `(docent)` with no term only counts.
 - Storage
   - Project: `~/.claude/docent/projects/<path-as-name>/avoid.txt` first, since the term may be specific to this project's domain. Nothing is written inside the user's repo, so nothing gets committed by accident.
   - Global: `~/.claude/docent/avoid.txt`. A term is promoted once it's been recorded in **two or more different projects**, tracked as `term<TAB>project-path` lines in `seen.txt`.
 - Format: `term<TAB>count<TAB>last-epoch` lines. A term may appear on several lines (each record is appended); counts are summed on read and merged at session start once a file passes 200 lines. Only the terms are injected, most frequent first, up to 30.
+- Terms are recorded with a fixed `level` too; only counting is skipped.
 
 ### 5.3 Levels
 
@@ -116,10 +101,10 @@ Weak signals are separate so ordinary questions such as "what's the difference b
 | `plain` | One idea per sentence; abbreviations spelled out | 5 lines |
 | `plainer` | Also: conclusion first, one concrete example | 6 lines |
 
-- **Down**: 3 strong signals within the last 20 messages lower the level one step.
-- **Up**: 7 days without a signal raises it one step, at SessionStart.
-- State lives in `~/.claude/docent/state` (`level=`, and `read_fail=` while replies can't be read) and `~/.claude/docent/events` (one `epoch<TAB>0|1` line per message, `epoch<TAB>R` on a level change). The window is the last 20 messages after the latest `R`; the quiet stretch is measured from the latest `1` or `R`.
-- Parallel sessions (e.g. several panes in one app) write these files at the same time. Per-message writes only append one short line (`>>`), so no session loses another's record and no hook ever waits on a lock. Avoid lists are appended too (`term<TAB>1<TAB>epoch`) and summed on read. Files are rewritten only on a level change, when reply reading starts or stops failing, at session start when they grow large (compaction), and by `/docent:status`.
+- **Down**: 3 marked replies within the last 20 replies lower the level one step (in `stop.sh`). The running session gets the new level rules on its next message (`prompt-submit.sh`, once per session, tracked in `~/.claude/docent/sessions/<session_id>`; files older than 7 days are removed at session start).
+- **Up**: 7 days without a marked reply raises it one step, at SessionStart.
+- State lives in `~/.claude/docent/state` (`level=`) and `~/.claude/docent/events` (one `epoch<TAB>0|1` line per reply, `epoch<TAB>R` on a level change). The window is the last 20 replies after the latest `R`; the quiet stretch is measured from the latest `1` or `R`.
+- Parallel sessions (e.g. several panes in one app) write these files at the same time. Per-reply writes only append one short line (`>>`), so no session loses another's record and no hook ever waits on a lock. Avoid lists are appended too (`term<TAB>1<TAB>epoch`) and summed on read. Files are rewritten only on a level change, at session start when they grow large (compaction), and by `/docent:status`.
 - The level is global only. It reflects the person, not the project.
 
 ### 5.4 Injected text
@@ -134,7 +119,7 @@ Do not make answers longer; only change word choice and sentence shape.
 - Use words practitioners actually say. Avoid coined terms, literal translations, and internal shorthand.
 - When you mention your own labels (section numbers, "Option A"), add a few words saying what they are.
 - Reuse the user's own terms for things.
-- If the user signals they didn't follow (in any language), re-explain only that part, briefly, in everyday words.
+- If the user signals they didn't follow something you wrote (in any language), re-explain only that part in everyday words, within 5 lines. No new concepts, no preamble. Then end the reply with one last line: `(docent: X)`, where X is your word or short phrase that confused them, as you wrote it; or `(docent)` if it wasn't one term. Never add that line otherwise.
 - Terms listed under "avoid" confused this user before; say what they mean instead.
 Reply in the user's language.
 ```
@@ -145,9 +130,9 @@ familiar: {stacks}. The user knows these well. When explaining a concept from an
 ```
 The user writes the stacks themselves; docent never guesses them from projects, since a wrong guess gives misleading comparisons.
 
-**Re-explain instruction (UserPromptSubmit, only on a re-ask)**
+**Level change (UserPromptSubmit, only on the first message after the level changed)**
 ```
-<docent>The user may not have followed your last explanation{ of "X"}. If this message asks about it, re-explain only that part in everyday words, within {N} lines. No new concepts, no preamble. If it is a new request or a question about something else, ignore this note.</docent>
+<docent>The explanation level changed. From now on: {level rules}</docent>
 ```
 
 ### 5.5 Configuration
@@ -170,24 +155,22 @@ claude-docent/                 # repo root = plugin root
 │   ├── plugin.json            # name: "docent" (names starting with claude- are reserved)
 │   └── marketplace.json       # the repo doubles as its own marketplace
 ├── hooks/
-│   └── hooks.json             # registers SessionStart and UserPromptSubmit
+│   └── hooks.json             # registers SessionStart, UserPromptSubmit, and Stop
 ├── scripts/
 │   ├── session-start.sh
-│   ├── prompt-submit.sh
+│   ├── prompt-submit.sh       # announces a level change mid-session
+│   ├── stop.sh                # reads the marker, records terms and re-asks
 │   ├── status.sh              # backs /docent:status
 │   └── lib.sh                 # config, state, events, and avoid-list helpers
 ├── profiles/                  # injected text (English)
 │   ├── core.md
 │   └── levels/{normal,plain,plainer}.md
-├── signals/                   # per-language re-ask patterns (community contributions)
-│   ├── en.txt
-│   └── ko.txt
 ├── skills/
 │   └── status/SKILL.md        # /docent:status [familiar <stacks> | forget <term> | reset]
 ├── tests/
-│   └── run.sh                 # runs the hooks against a temp data dir and a fake transcript
+│   └── run.sh                 # runs the hooks against a temp data dir
 ├── .gitattributes             # *.sh text eol=lf
-├── CONTRIBUTING.md            # how to add a signals file
+├── CONTRIBUTING.md            # docs and release rules
 ├── LICENSE                    # MIT
 ├── README.md
 └── README.ko.md               # Korean translation of README.md
@@ -210,26 +193,21 @@ bash tests/run.sh                                # hook tests
 
 | # | Input | Expected |
 |---|---|---|
-| 1 | An ordinary question | prompt-submit prints nothing |
-| 2 | "what do you mean?" / "이게 무슨말인가요" | Re-explain instruction, count +1, no term recorded |
-| 3 | Last reply used "drain"; user asks "what does drain mean?" | "drain" recorded in the project avoid.txt |
-| 4 | "what's a monad?" when the last reply didn't use it | Nothing printed |
-| 4-1 | A re-ask in a language without a signals file (e.g. Japanese "どういう意味？") | Hook prints nothing; Claude re-explains briefly via the core rules |
-| 5 | 3 strong signals within 20 messages | Level goes from normal to plain |
+| 1 | An ordinary question | No marker; Stop counts 0; prompt-submit prints nothing |
+| 2 | "what do you mean?" / "이게 무슨말인가요" / "どういう意味？" | Claude re-explains and ends with `(docent)`; count +1, no term |
+| 3 | Last reply used "drain"; user asks "what does drain mean?" | Reply ends with `(docent: drain)`; "drain" recorded in the project avoid.txt |
+| 4 | "what's a monad?" when the last reply didn't use it | Ordinary answer, no marker |
+| 5 | 3 marked replies within 20 | Level goes from normal to plain; the next message gets the plain rules once |
 | 6 | Same term recorded in two projects | Promoted to the global avoid.txt |
 | 7 | New session after 7 quiet days | Level goes up one step |
 | 8 | Same question with the plugin on and off | Answers are about the same length |
-| 9 | A coding request | No effect on code or files |
+| 9 | A coding request, or a long pasted task that quotes "무슨 뜻이에요" | No marker; nothing recorded |
 | 10 | After `/compact` | Rules are injected again via SessionStart (compact) |
-| 11 | A task or bug report with a signal phrase ("이 에러가 왜 나는지 이해가 안 돼요", "I'm confused why this test fails") | Nothing printed |
-| 12 | A term that appeared only in a command Claude ran, not in its reply | Nothing recorded |
-| 13 | Several sessions submitting at the same moment | Every message and term is recorded; no hook waits |
-| 14 | A transcript whose assistant lines have no readable text block | Nothing printed; `read_fail` set; `/docent:status` shows `failing since`; cleared on the next readable reply |
-| 15 | Text block with spaces between keys, not first in the array, or keys reversed | Read the same way with and without jq |
-| 16 | "드레인은 무슨 뜻이에요?", "드레인이란?", "드레인이 뭐지" | "드레인" recorded; "이게 무슨 말인가요" counts with no term |
+| 11 | A marker quoted mid-reply or inline | Not counted |
+| 12 | Several sessions finishing replies at the same moment | Every reply and term is recorded; no hook waits |
+| 13 | User interrupts the re-explanation | Stop doesn't run; nothing recorded |
 
 ## 8. Later
 
-- More signals languages (ja, zh, es, de, fr, pt …).
 - Windows: hooks run through Git Bash, so the README notes that Git for Windows is required. Add a PowerShell version if needed.
-- Stop hook: its input has `last_assistant_message`, which the hooks docs recommend over the transcript (written asynchronously). Saving it per session would avoid depending on the transcript format. Not done yet: by the time the user types the next prompt the transcript is almost always written, the transcript path is still needed when the user interrupts (Stop doesn't run), and what the field holds for a reply with several text blocks isn't documented. Revisit if `reply read: failing` shows up.
+- Measure how often Claude adds the marker when it should, and how often it adds it when it shouldn't, on real sessions.

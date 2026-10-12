@@ -46,7 +46,7 @@ familiar=react, typescript   # 잘 아는 스택 (선택)
 
 ## 명령
 
-- `/docent:status` — 현재 단계와 기억된 단어를 보여 줍니다. `reply read: failing since <날짜>`가 보이면 대화 기록에서 Claude의 답변을 읽지 못하고 있다는 뜻입니다(기록 형식이 바뀌었을 수 있습니다). 이때는 단어가 Claude 답변에서 나왔는지 확인할 수 없으니 이슈로 알려 주세요
+- `/docent:status` — 현재 단계와 기억된 단어를 보여 줍니다
 - `/docent:status familiar <스택>` — 잘 아는 스택을 설정합니다 (예: `react, typescript`). 스택 없이 실행하면 설정을 지웁니다
 - `/docent:status forget <단어>` — 그 단어를 더 이상 피하지 않습니다
 - `/docent:status reset` — 단계와 기억된 단어를 모두 지웁니다
@@ -55,9 +55,15 @@ familiar=react, typescript   # 잘 아는 스택 (선택)
 
 `~/.claude/docent/`에 일반 텍스트로 저장합니다. 프로젝트 폴더 안에는 아무것도 쓰지 않습니다. 이 폴더를 지우면 초기화됩니다.
 
-## 언어
+## 동작 방식
 
-다시 설명하기는 모든 언어에서 됩니다. 되묻기 횟수 세기와 단어 기억은 영어와 한국어를 지원합니다. `signals/<언어>.txt` 파일을 기여하면 다른 언어도 추가할 수 있습니다. 방법은 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다.
+못 알아들었는지는 Claude가 직접 판단합니다. 언어는 상관없습니다. 다시 설명할 때는 답변 맨 끝에 헷갈렸던 단어를 적은 짧은 줄을 붙입니다.
+
+```
+(docent: 드레인)
+```
+
+docent는 답변이 끝나면 이 줄을 읽고 단어를 기억하고 되물은 횟수를 셉니다. 이 줄은 다시 설명할 때만 붙습니다. 단어가 잘못 기록됐으면 `/docent:status forget <단어>`로 지우세요.
 
 ## 라이선스
 

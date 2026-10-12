@@ -29,11 +29,6 @@ enabled && on=on || on=off
 echo "docent: $on, level=$(current_level) ($(config_get level auto))"
 f="$(familiar)"; echo "familiar:      ${f:-(not set)}"
 echo "recent re-asks: $(recent_hits)/$WINDOW"
-rf="$(state_get read_fail)"
-case "$rf" in
-  ''|*[!0-9]*) echo "reply read:    ok" ;;
-  *) echo "reply read:    failing since $(date -r "$rf" '+%Y-%m-%d %H:%M' 2> /dev/null || date -d "@$rf" '+%Y-%m-%d %H:%M')" ;;
-esac
 echo "global terms:  $(cut -f1 "$GLOBAL_AVOID" 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"
 echo "project terms: $(cut -f1 "$(project_data)/avoid.txt" 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"
 
