@@ -15,6 +15,14 @@ It doesn't make answers longer and doesn't touch code, commits, or files.
 
 Requires `bash`. On Windows, install [Git for Windows](https://git-scm.com/download/win).
 
+### Update
+
+Third-party marketplaces don't auto-update by default. Turn it on for `docent` in `/plugin` → Marketplaces, or update manually:
+
+```
+/plugin marketplace update docent
+```
+
 ## Configure
 
 Optional. Create `~/.claude/docent/config` (all projects) or `<project>/.claude/docent/config` (this project only; overrides global):
