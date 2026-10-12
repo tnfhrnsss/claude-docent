@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# /docent:status — show level and remembered terms; "reset" clears them.
+# /docent:status — show level and remembered terms; "reset" clears them,
+# "familiar <stacks>" sets the stacks the user knows (empty clears).
 
 . "$(dirname "$0")/lib.sh"
 
@@ -16,10 +17,17 @@ case "$1" in
     [ -f "$SEEN" ] && awk -F '\t' -v t="$t" '$1!=t' "$SEEN" > "$SEEN.$$" && mv "$SEEN.$$" "$SEEN"
     echo "docent: forgot \"$t\"."
     exit 0 ;;
+  familiar)
+    shift
+    conf_set "$DATA/config" familiar "$(printf '%s' "$*" | tr -cd '[:print:]' | cut -c1-100)"
+    if [ -n "$*" ]; then echo "docent: familiar set to \"$(familiar)\". Applies from the next session or /clear."
+    else echo "docent: familiar cleared. Applies from the next session or /clear."; fi
+    exit 0 ;;
 esac
 
 enabled && on=on || on=off
 echo "docent: $on, level=$(current_level) ($(config_get level auto))"
+f="$(familiar)"; echo "familiar:      ${f:-(not set)}"
 echo "recent re-asks: $(recent_hits)/$WINDOW"
 echo "global terms:  $(cut -f1 "$GLOBAL_AVOID" 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"
 echo "project terms: $(cut -f1 "$(project_data)/avoid.txt" 2>/dev/null | sort -u | paste -sd, - | sed 's/,/, /g')"

@@ -24,19 +24,22 @@ REPLY_BLOCKS=8     # recent reply text blocks searched for a term
 
 # --- key=value files ---------------------------------------------------------
 
-conf_get() {  # $1=file $2=key
+conf_get() {  # $1=file $2=key — value up to a # comment, may contain spaces
   [ -f "$1" ] || return 0
-  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\([^#[:space:]]*\).*/\1/p" "$1" | tail -n 1
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\([^#]*\).*/\1/p" "$1" | tail -n 1 \
+    | sed 's/[[:space:]]*$//'
+}
+
+conf_set() {  # $1=file $2=key $3=value (empty removes the key)
+  mkdir -p "$(dirname "$1")"
+  local tmp="$1.$$"
+  { [ -f "$1" ] && grep -v "^[[:space:]]*$2[[:space:]]*=" "$1"; [ -n "$3" ] && echo "$2=$3"; } > "$tmp"
+  mv "$tmp" "$1"
 }
 
 state_get() { conf_get "$STATE" "$1"; }
 
-state_set() {  # $1=key $2=value
-  mkdir -p "$DATA"
-  local tmp="$STATE.$$"
-  { [ -f "$STATE" ] && grep -v "^$1=" "$STATE"; echo "$1=$2"; } > "$tmp"
-  mv "$tmp" "$STATE"
-}
+state_set() { conf_set "$STATE" "$1" "$2"; }  # $1=key $2=value
 
 # --- project ----------------------------------------------------------------
 
@@ -51,6 +54,9 @@ config_get() {  # $1=key $2=default — project config overrides global
   [ -n "$v" ] || v="$(conf_get "$DATA/config" "$1")"
   echo "${v:-$2}"
 }
+
+# Stacks the user knows well, e.g. "react, typescript". Printable text only.
+familiar() { config_get familiar "" | tr -cd '[:print:]' | cut -c1-100; }
 
 enabled() { [ "$(config_get enabled true)" != "false" ]; }
 
