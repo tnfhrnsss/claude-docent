@@ -113,6 +113,9 @@ reply "We drain the queue."
 submit "what does drain mean?" > /dev/null
 check "term in 2 projects promoted to global" "$(grep -q '^drain	' "$DOCENT_HOME/avoid.txt"; echo $?)"
 
+out="$(bash "$ROOT/scripts/status.sh")"
+check "status counts other projects' terms" "$(echo "$out" | grep -q '^other projects: [0-9]* terms\{0,1\} in 1 project$'; echo $?)"
+
 # Fixed level and disable via config.
 mkdir -p "$CLAUDE_PROJECT_DIR/.claude/docent"
 printf 'level=normal\n' > "$CLAUDE_PROJECT_DIR/.claude/docent/config"
