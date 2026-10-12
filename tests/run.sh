@@ -175,5 +175,26 @@ for i in $(seq 1 250); do printf 'lint\t1\t1\n'; done >> "$DOCENT_HOME/avoid.txt
 start > /dev/null
 check "avoid list compacted, count kept" "$(grep -q '^lint	250	' "$DOCENT_HOME/avoid.txt" && [ "$(wc -l < "$DOCENT_HOME/avoid.txt" | tr -d ' ')" -le 3 ]; echo $?)"
 
+# Hooks fail open: broken data never surfaces as an error or a non-zero exit.
+printf 'level=plain\n' > "$DOCENT_HOME/state"
+printf '17000x\t1\nnot a line\n' > "$DOCENT_HOME/events"
+out="$(start 2> "$TMP/err")"; rc=$?
+check "corrupt events: start exits 0 and still prints rules" "$([ $rc = 0 ] && echo "$out" | grep -q '<docent level=\"plain\">'; echo $?)"
+check "corrupt events: no error output" "$([ ! -s "$TMP/err" ]; echo $?)"
+
+printf 'level=plain\nlast_signal=garbage\n' > "$DOCENT_HOME/state"
+rm -f "$DOCENT_HOME/events"
+start > /dev/null 2> "$TMP/err"
+check "corrupt last_signal: no error, level kept" "$([ ! -s "$TMP/err" ] && [ "$(level)" = plain ]; echo $?)"
+
+if [ "$(id -u)" != 0 ]; then  # root ignores file permissions
+  chmod -R a-w "$DOCENT_HOME"
+  out="$(submit "what do you mean?" 2> /dev/null)"; rc=$?
+  check "read-only data dir: submit exits 0 and still re-explains" "$([ $rc = 0 ] && echo "$out" | grep -q 'may not have followed'; echo $?)"
+  out="$(start 2> /dev/null)"; rc=$?
+  check "read-only data dir: start exits 0 and still prints rules" "$([ $rc = 0 ] && echo "$out" | grep -q '<docent level='; echo $?)"
+  chmod -R u+w "$DOCENT_HOME"
+fi
+
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
