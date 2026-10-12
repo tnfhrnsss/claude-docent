@@ -15,6 +15,14 @@
 
 `bash`가 필요합니다. Windows에서는 [Git for Windows](https://git-scm.com/download/win)를 설치하세요.
 
+### 업데이트
+
+직접 추가한 마켓플레이스는 기본적으로 자동 업데이트가 꺼져 있습니다. `/plugin` → Marketplaces에서 `docent`의 자동 업데이트를 켜거나, 직접 업데이트하세요:
+
+```
+/plugin marketplace update docent
+```
+
 ## 설정
 
 선택 사항입니다. `~/.claude/docent/config`(모든 프로젝트) 또는 `<프로젝트>/.claude/docent/config`(이 프로젝트만, 전체 설정보다 우선)를 만드세요.
