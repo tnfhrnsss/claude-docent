@@ -59,6 +59,8 @@ check "stop word → silent" "$([ -z "$out" ]; echo $?)"
 
 submit "sorry, I'm lost" > /dev/null
 check "third signal steps level down to plain" "$([ "$(level)" = plain ]; echo $?)"
+submit "what do you mean?" > /dev/null; submit "i'm lost" > /dev/null
+check "count restarts after a level change" "$([ "$(level)" = plain ]; echo $?)"
 
 reply "이 단계에서 큐를 드레인하고 다음 회차로 넘어갑니다."
 out="$(submit "드레인이 뭔가요")"
@@ -107,9 +109,32 @@ check "enabled=false prints nothing" "$([ -z "$out" ]; echo $?)"
 
 # Step back up after a quiet week.
 rm "$CLAUDE_PROJECT_DIR/.claude/docent/config"
-printf 'level=plain\nlast_signal=%s\n' "$(( $(date +%s) - 8 * 86400 ))" > "$DOCENT_HOME/state"
+printf 'level=plain\n' > "$DOCENT_HOME/state"
+printf '%s\t1\n' "$(( $(date +%s) - 8 * 86400 ))" > "$DOCENT_HOME/events"
 start > /dev/null
 check "quiet week steps level back up" "$([ "$(level)" = normal ]; echo $?)"
+
+# Legacy state (last_signal, no events file) still steps up.
+rm -f "$DOCENT_HOME/events"
+printf 'level=plain\nlast_signal=%s\n' "$(( $(date +%s) - 8 * 86400 ))" > "$DOCENT_HOME/state"
+start > /dev/null
+check "legacy last_signal still steps level up" "$([ "$(level)" = normal ]; echo $?)"
+
+# Parallel sessions must not lose each other's records.
+rm -f "$DOCENT_HOME/events"
+for i in $(seq 1 15); do submit "how do I add a route?" > /dev/null & done; wait
+check "15 parallel prompts all recorded" "$([ "$(wc -l < "$DOCENT_HOME/events" | tr -d ' ')" = 15 ]; echo $?)"
+
+reply "We drain the queue."
+before="$(proj_avoid | awk -F '\t' '$1=="drain"{c+=$2} END{print c+0}')"
+for i in $(seq 1 10); do submit "what does drain mean?" > /dev/null & done; wait
+after="$(proj_avoid | awk -F '\t' '$1=="drain"{c+=$2} END{print c+0}')"
+check "10 parallel term records all kept" "$([ $((after - before)) = 10 ]; echo $?)"
+
+# Compaction merges repeated lines without losing counts.
+for i in $(seq 1 250); do printf 'lint\t1\t1\n'; done >> "$DOCENT_HOME/avoid.txt"
+start > /dev/null
+check "avoid list compacted, count kept" "$(grep -q '^lint	250	' "$DOCENT_HOME/avoid.txt" && [ "$(wc -l < "$DOCENT_HOME/avoid.txt" | tr -d ' ')" -le 3 ]; echo $?)"
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -113,7 +113,8 @@ Weak signals are separate so ordinary questions such as "what's the difference b
 
 - **Down**: 3 strong signals within the last 20 messages lower the level one step.
 - **Up**: 7 days without a signal raises it one step, at SessionStart.
-- State lives in `~/.claude/docent/state`: `level=`, `recent=` (0/1 history of the last 20 messages), `last_signal=` (epoch).
+- State lives in `~/.claude/docent/state` (`level=` only) and `~/.claude/docent/events` (one `epoch<TAB>0|1` line per message, `epoch<TAB>R` on a level change). The window is the last 20 messages after the latest `R`; the quiet stretch is measured from the latest `1` or `R`.
+- Parallel sessions (e.g. several panes in one app) write these files at the same time. Per-message writes only append one short line (`>>`), so no session loses another's record and no hook ever waits on a lock. Avoid lists are appended too (`term<TAB>1<TAB>epoch`) and summed on read. Files are rewritten only on a level change, at session start when they grow large (compaction), and by `/docent:status`.
 - The level is global only. It reflects the person, not the project.
 
 ### 5.4 Injected text
