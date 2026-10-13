@@ -12,9 +12,12 @@ HOOK_CWD="$(json_str "$INPUT" cwd)"
 enabled || exit 0
 
 # The marker must be the last line of last_assistant_message, so a marker
-# quoted mid-reply doesn't count. The JSON is matched raw: newlines are "\n".
+# quoted mid-reply doesn't count. The JSON is matched raw: newlines are "\n",
+# quotes are \". The line may be wrapped in ` or ** or end with a period, and
+# a term may contain ")" (e.g. "useEffect()").
 found="$(printf '%s' "$INPUT" | tr '\n' ' ' | sed -E -n \
-  's/^.*\\n\(docent(: ([^)"\\]{1,200}))?\)(\\n|[[:space:]])*"[[:space:]]*[,}].*$/=\2/p' | head -n 1)"
+  's/^.*\\n[`*[:space:]]*\(docent(: (([^"\\]|\\")+))?\)[`*.[:space:]]*(\\n|[[:space:]])*"[[:space:]]*[,}].*$/=\2/p' \
+  | head -n 1)"
 
 if [ -z "$found" ]; then
   auto_mode && event_add 0
@@ -23,7 +26,9 @@ fi
 
 # "(docent: a, b)" names up to 3 terms.
 printf '%s\n' "${found#=}" | tr ',' '\n' | head -n 3 | while read -r t; do
-  t="$(printf '%s' "$t" | tr -d '[:cntrl:]' | tr 'A-Z' 'a-z' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  # Unescape \" and drop surrounding spaces, quotes, and backticks.
+  t="$(printf '%s' "$t" | sed 's/\\"/"/g' | tr -d '[:cntrl:]' | tr 'A-Z' 'a-z' \
+    | sed -E "s/^[[:space:]\`\"']+|[[:space:]\`\"']+\$//g")"
   [ -n "$t" ] && [ ${#t} -le 60 ] && record_term "$t"
 done
 

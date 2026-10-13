@@ -65,6 +65,15 @@ check "marker not on the last line → 0" "$([ "$(last_event)" = 0 ]; echo $?)"
 stop "Add a line like \`(docent: drain)\` at the end."
 check "marker quoted inline → 0" "$([ "$(last_event)" = 0 ]; echo $?)"
 
+stop "x\n\`(docent: wrapped)\`"
+check "marker line in backticks: counted" "$([ "$(last_event)" != 0 ] && proj_avoid | grep -q '^wrapped	'; echo $?)"
+stop "x\n**(docent: bold)**."
+check "marker line in bold with a period: counted" "$([ "$(last_event)" != 0 ] && proj_avoid | grep -q '^bold	'; echo $?)"
+stop "x\n(docent: useEffect())"
+check "term containing ) recorded whole" "$(proj_avoid | grep -q '^useeffect()	'; echo $?)"
+stop "x\n(docent: \`ticked\`, \\\"quoted\\\")"
+check "backticks and quotes stripped from terms" "$(proj_avoid | grep -q '^ticked	' && proj_avoid | grep -q '^quoted	'; echo $?)"
+
 n="$(events)"
 printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "$CLAUDE_PROJECT_DIR" | bash "$ROOT/scripts/stop.sh"; rc=$?
 check "no last_assistant_message: exit 0, counted as 0" "$([ $rc = 0 ] && [ "$(last_event)" = 0 ] && [ "$(events)" = $((n + 1)) ]; echo $?)"
