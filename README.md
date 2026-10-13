@@ -23,6 +23,8 @@ Third-party marketplaces don't auto-update by default. Turn it on for `docent` i
 /plugin marketplace update docent
 ```
 
+Updating keeps your settings and learned terms. They live in `~/.claude/docent/`, outside the plugin folder.
+
 ## How it works
 
 Claude itself judges, in any language, when you didn't follow. When it re-explains, it ends that reply with one short line naming the word that confused you:
