@@ -1,12 +1,14 @@
 {
   "name": "docent",
-  "owner": { "name": "tnfhrnsss" },
-  "description": "docent: plain-language re-explanations that adapt to you",
+  "owner": {
+    "name": "tnfhrnsss"
+  },
+  "description": "docent: explanations grounded in your technical experience",
   "plugins": [
     {
       "name": "docent",
       "source": "./",
-      "description": "Re-explains in plain words when you didn't follow, and adapts over time."
+      "description": "Explains new technologies through the user's own technical experience."
     }
   ]
 }
