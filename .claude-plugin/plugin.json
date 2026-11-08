@@ -1,9 +1,16 @@
 {
   "name": "docent",
-  "version": "0.4.1",
-  "description": "Notices when you didn't follow an explanation, re-explains in plain words, and keeps future answers plainer.",
-  "author": { "name": "tnfhrnsss" },
+  "version": "0.5.0",
+  "description": "Explains new technologies through the user's own technical experience.",
+  "author": {
+    "name": "tnfhrnsss"
+  },
   "repository": "https://github.com/tnfhrnsss/claude-docent",
   "license": "MIT",
-  "keywords": ["explain", "plain-language", "jargon", "learning"]
+  "keywords": [
+    "explain",
+    "familiar",
+    "technical-experience",
+    "learning"
+  ]
 }

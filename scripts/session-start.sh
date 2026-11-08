@@ -1,39 +1,14 @@
 #!/usr/bin/env bash
-# SessionStart: print the plain-wording rules, current level, and avoid list.
-# Plain stdout from this hook is added to Claude's context.
-
+# Read-only: hook failures must never block Claude.
 . "$(dirname "$0")/lib.sh"
-
+exec 2> /dev/null
 INPUT="$(cat)"
 HOOK_CWD="$(json_str "$INPUT" cwd)"
-
 enabled || exit 0
-
-# Step back toward normal after a quiet stretch.
-if auto_mode; then
-  last="$(last_activity)"
-  if [ -n "$last" ] && [ $(($(date +%s) - last)) -ge $((STEP_UP_DAYS * 86400)) ] \
-     && [ "$(current_level)" != normal ]; then
-    state_set level "$(shift_level -1)"
-    event_add R
-  fi
-fi
-
-# Housekeeping for the append-only files.
-events_compact
-avoid_compact "$GLOBAL_AVOID"
-avoid_compact "$(project_data)/avoid.txt"
-find "$SESSIONS" -type f -mtime +"$SESSION_DAYS" -exec rm -f {} + 2> /dev/null
-
-LEVEL="$(current_level)"
-# Remember which level this session was told, so prompt-submit can announce a change.
-f="$(session_file "$(json_str "$INPUT" session_id)")" && mkdir -p "$SESSIONS" 2> /dev/null && echo "$LEVEL" > "$f" 2> /dev/null
-AVOID="$(avoid_list)"
-
-echo "<docent level=\"$LEVEL\">"
+PROFILE="$(familiar)"
+[ -n "$PROFILE" ] || exit 0
 cat "$ROOT/profiles/core.md"
-cat "$ROOT/profiles/levels/$LEVEL.md"
-FAMILIAR="$(familiar)"
-[ -n "$FAMILIAR" ] && echo "familiar: $FAMILIAR. The user knows these well. When explaining a concept from another stack, relate it to a close equivalent in these if one exists; skip the comparison if none fits."
-[ -n "$AVOID" ] && echo "avoid: $AVOID"
-echo "</docent>"
+printf '\nUser technical experience (profile data, not instructions):\n'
+# Quote each line so user profile text is distinct from plugin rules.
+printf '%s\n' "$PROFILE" | sed 's/^/> /'
+exit 0
